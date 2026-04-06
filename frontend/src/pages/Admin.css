@@ -1,0 +1,450 @@
+.admin-page {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.admin-page h2 {
+  color: var(--text-bright);
+  margin-bottom: 16px;
+  font-size: 20px;
+}
+
+.admin-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.data-table th, .data-table td {
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 13px;
+}
+
+.data-table th {
+  background-color: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.data-table tr:hover td {
+  background-color: var(--bg-hover);
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.row-title-button {
+  background: transparent;
+  color: var(--text-primary);
+  border: none;
+  text-align: left;
+  padding: 0;
+  font-size: 13px;
+}
+
+.row-title-button:hover {
+  color: var(--text-bright);
+  text-decoration: underline;
+}
+
+.action-menu {
+  position: relative;
+}
+
+.action-menu-trigger {
+  min-width: 32px;
+  width: 32px;
+  height: 30px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.action-menu-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  z-index: 20;
+  overflow: hidden;
+}
+
+.action-menu-item {
+  background: transparent;
+  color: var(--text-primary);
+  border: none;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 0;
+}
+
+.action-menu-item:hover {
+  background: var(--bg-hover);
+}
+
+.action-menu-item.danger {
+  color: var(--error);
+}
+
+.topic-subsection-title {
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 10px 14px 4px;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 24px;
+  min-width: 400px;
+  max-width: 600px;
+}
+
+/* Modal gran per a exercicis */
+.modal.modal-exercise {
+  width: 90vw;
+  max-width: 1100px;
+  max-height: 90vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.exercise-form-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  min-height: 260px;
+}
+
+.exercise-form-body > * {
+  min-width: 0;
+}
+
+.exercise-form-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.form-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+  display: block;
+}
+
+.exercise-desc-textarea {
+  flex: 1;
+  width: 100%;
+  min-height: 240px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  resize: none;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  padding: 8px;
+}
+
+.markdown-preview {
+  flex: 1;
+  min-height: 240px;
+  min-width: 0;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+.markdown-preview ul,
+.markdown-preview ol {
+  padding-left: 1.5em;
+  margin: 4px 0;
+}
+
+.markdown-preview li {
+  margin: 2px 0;
+}
+
+.markdown-preview h1, .markdown-preview h2, .markdown-preview h3 {
+  color: var(--text-bright);
+  margin: 8px 0 4px;
+}
+
+.markdown-preview :not(pre) > code {
+  background: var(--bg-primary);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.markdown-preview pre {
+  background: var(--bg-primary);
+  padding: 8px;
+  border-radius: var(--radius);
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* Keep code blocks flush with pre padding; avoid extra offset on first line */
+.markdown-preview pre code {
+  padding: 0 !important;
+  background: none;
+  border-radius: 0;
+}
+
+/* SyntaxHighlighter uses PreTag="div", so its inner <pre> must not get double padding */
+.markdown-preview div > pre {
+  padding: 0;
+  background: none;
+  margin: 0;
+}
+
+.exercise-editor-wrapper {
+  height: 180px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+/* Make Monaco look editable in exercise form by matching textarea background */
+.exercise-editor-wrapper .monaco-editor,
+.exercise-editor-wrapper .monaco-editor .margin,
+.exercise-editor-wrapper .monaco-editor .monaco-editor-background {
+  background-color: var(--bg-tertiary) !important;
+}
+
+.modal h3 {
+  color: var(--text-bright);
+  margin-bottom: 16px;
+}
+
+.modal .form-group {
+  margin-bottom: 14px;
+}
+
+.modal label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.modal input, .modal select, .modal textarea {
+  width: 100%;
+}
+
+.modal textarea {
+  min-height: 120px;
+  font-family: var(--font-mono);
+  resize: vertical;
+}
+
+.modal .modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.class-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.class-detail-header h2 {
+  margin-bottom: 0;
+}
+
+.section-title {
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 20px 0 10px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.topic-section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.topic-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--bg-tertiary);
+}
+
+.topic-section-header h4 {
+  color: var(--text-bright);
+  font-size: 14px;
+}
+
+.exercise-row:hover {
+  background: var(--bg-hover);
+}
+
+.progress-table td.not_started { color: var(--text-secondary); }
+.progress-table td.in_progress { color: var(--warning); }
+.progress-table td.correct, .progress-table td.teacher_correct { color: var(--success); }
+.progress-table td.incorrect, .progress-table td.teacher_incorrect { color: var(--error); }
+
+/* Drag handles */
+.drag-handle {
+  cursor: grab;
+  color: var(--text-secondary);
+  font-size: 16px;
+  padding: 0 6px;
+  user-select: none;
+  flex-shrink: 0;
+  opacity: 0.5;
+  transition: opacity 0.15s;
+}
+
+.drag-handle:hover {
+  opacity: 1;
+  color: var(--text-primary);
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.topic-drag-handle {
+  font-size: 18px;
+  margin-right: 4px;
+}
+
+/* Unlock mode selector */
+.unlock-mode-select {
+  font-size: 11px;
+  padding: 2px 6px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  min-width: 90px;
+  flex-shrink: 0;
+  margin: auto 10px;
+}
+
+.unlock-mode-select:hover {
+  color: var(--text-primary);
+  border-color: var(--accent-blue);
+}
+
+/* Exercise row with drag handle */
+.exercise-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px 8px 8px;
+  border-top: 1px solid var(--border-color);
+  font-size: 13px;
+  gap: 4px;
+}
+
+/* Progress dots cell in class progress table */
+.progress-dots-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  flex-wrap: wrap;
+  min-width: 30px;
+}
+
+.progress-dots-cell a {
+  display: inline-flex;
+  align-items: center;
+}
+
+.progress-dots-cell .status-dot {
+  width: 11px;
+  height: 11px;
+}
+
+.status-dot.not_started,
+.status-dot.not_read {
+  background-color: var(--bg-active);
+}
+
+.status-dot.in_progress {
+  background-color: var(--warning);
+}
+
+.status-dot.correct,
+.status-dot.teacher_correct,
+.status-dot.read {
+  background-color: var(--success);
+}
+
+.status-dot.incorrect,
+.status-dot.teacher_incorrect {
+  background-color: var(--error);
+}
+
+.progress-dots-cell .status-dot:hover {
+  transform: scale(1.3);
+  transition: transform 0.1s;
+}
+
