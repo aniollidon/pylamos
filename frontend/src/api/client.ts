@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE ?? `http://${window.location.hostname === '127.0.0.1' ? '127.0.0.1' : 'localhost'}:8000`;
+const API_BASE = import.meta.env.VITE_API_BASE ?? `http://${window.location.hostname}:8000`;
 
 function buildFallbackBase(base: string): string | null {
   if (base.includes('localhost')) return base.replace('localhost', '127.0.0.1');

@@ -316,6 +316,37 @@ export default function TeacherReview() {
                   {msg.role === 'teacher' && <div className="chat-badge">[Professor]</div>}
                   {msg.role === 'assistant' && <div className="chat-badge">[🤖]</div>}
                   <MdRenderer>{msg.content}</MdRenderer>
+                  {msg.version && (
+                    <button
+                      className="btn-code-snapshot"
+                      title={t('view_code_version')}
+                      onClick={() => {
+                        const idx = versions.findIndex((v) => v.id === msg.version!.id);
+                        if (idx >= 0) {
+                          setSelectedVersion(idx);
+                        }
+                      }}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 3,
+                        marginTop: 4,
+                        padding: '2px 7px',
+                        fontSize: 11,
+                        background: versions[selectedVersion]?.id === msg.version.id
+                          ? 'var(--accent)'
+                          : 'var(--bg-tertiary, #333)',
+                        color: versions[selectedVersion]?.id === msg.version.id
+                          ? '#fff'
+                          : 'var(--text-secondary)',
+                        border: 'none',
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      &lt;/&gt; v{msg.version.version_number}
+                    </button>
+                  )}
                 </div>
               ))
             )}

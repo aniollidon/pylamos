@@ -8,7 +8,7 @@ from app.config import settings
 from app.database import engine, Base
 from app.models import *  # noqa: F401,F403 — ensure all models are imported for table creation
 
-from app.routers import auth, users, classes, topics, exercises, materials, submissions, chat, progress
+from app.routers import auth, users, classes, topics, exercises, materials, submissions, chat, progress, code
 
 
 @asynccontextmanager
@@ -17,6 +17,7 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await _ensure_chat_message_verdict_column(conn)
+        await _ensure_chat_message_version_id_column(conn)
         await _ensure_topic_unlock_mode_column(conn)
     # Seed admin user if no users exist
     await _seed_admin()
@@ -28,6 +29,13 @@ async def _ensure_chat_message_verdict_column(conn):
     columns = {row[1] for row in result.fetchall()}
     if "verdict" not in columns:
         await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN verdict VARCHAR(20)"))
+
+
+async def _ensure_chat_message_version_id_column(conn):
+    result = await conn.execute(text("PRAGMA table_info(chat_messages)"))
+    columns = {row[1] for row in result.fetchall()}
+    if "version_id" not in columns:
+        await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN version_id INTEGER REFERENCES submission_versions(id)"))
 
 
 async def _ensure_topic_unlock_mode_column(conn):
@@ -75,6 +83,7 @@ app.include_router(materials.router)
 app.include_router(submissions.router)
 app.include_router(chat.router)
 app.include_router(progress.router)
+app.include_router(code.router)
 
 
 @app.get("/api/health")

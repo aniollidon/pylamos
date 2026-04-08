@@ -1,16 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, func as sqlfunc, desc
+from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.user import User, UserRole
 from app.models.submission import Submission, SubmissionVersion, SubmissionStatus
+from app.models.exercise import Exercise
 from app.schemas.submission import (
-    SubmissionCreate, SubmissionOut, SubmissionDetailOut,
+    SubmissionOut, SubmissionDetailOut,
     SubmissionOverride, SaveCodeRequest, SubmissionVersionOut,
 )
 from app.utils.security import get_current_user, require_role
+from app.utils.topic_access import ensure_topic_access
+from app.utils.submission_utils import save_code_version
 
 router = APIRouter(prefix="/api", tags=["submissions"])
 
@@ -22,6 +25,13 @@ async def create_or_get_submission(
     current_user: User = Depends(get_current_user),
 ):
     """Get existing submission or create a new one."""
+    exercise_result = await db.execute(select(Exercise).where(Exercise.id == exercise_id))
+    exercise = exercise_result.scalar_one_or_none()
+    if not exercise:
+        raise HTTPException(status_code=404, detail="Exercise not found")
+
+    await ensure_topic_access(db, current_user, exercise.topic_id)
+
     result = await db.execute(
         select(Submission).where(
             Submission.exercise_id == exercise_id,
@@ -84,21 +94,7 @@ async def save_code(
     if current_user.role == UserRole.student and submission.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    # Get max version number
-    max_result = await db.execute(
-        select(sqlfunc.max(SubmissionVersion.version_number)).where(
-            SubmissionVersion.submission_id == submission_id
-        )
-    )
-    max_version = max_result.scalar() or 0
-
-    version = SubmissionVersion(
-        submission_id=submission_id,
-        code=body.code,
-        version_number=max_version + 1,
-    )
-    db.add(version)
-    await db.flush()
+    version = await save_code_version(db, submission_id, body.code)
     await db.refresh(version)
     return version
 

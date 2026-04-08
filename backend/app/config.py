@@ -10,7 +10,11 @@ class Settings(BaseSettings):
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     GEMINI_API_KEY: str = ""
-    CORS_ORIGINS: str = '["http://localhost:5173", "http://127.0.0.1:5173"]'
+    GEMINI_MAX_RETRIES: int = 3
+    GEMINI_RETRY_INITIAL_DELAY_SECONDS: float = 1.0
+    GEMINI_RETRY_BACKOFF_MULTIPLIER: float = 2.0
+    GEMINI_RETRY_MAX_DELAY_SECONDS: float = 8.0
+    CORS_ORIGINS: str = '["http://localhost:5173", "http://127.0.0.1:5173", "http://192.168.19:5173"]'
 
     @property
     def cors_origins_list(self) -> List[str]:

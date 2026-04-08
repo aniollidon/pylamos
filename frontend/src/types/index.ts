@@ -86,6 +86,16 @@ export interface Conversation {
   messages?: ChatMessage[];
 }
 
+export interface CodeExecutionInfo {
+  status: 'ok' | 'compile_ok' | 'compile_error' | 'runtime_error' | 'stdin_needed';
+  compiled: boolean;
+  executed: boolean;
+  can_mark_resolved: boolean;
+  line?: number;
+  error_type?: string;
+  error_message?: string;
+}
+
 export interface ChatMessage {
   id: number;
   conversation_id: number;
@@ -93,6 +103,8 @@ export interface ChatMessage {
   content: string;
   verdict?: 'correct' | 'incorrect' | null;
   code_snapshot?: string;
+  version_id?: number;
+  version?: SubmissionVersion;
   created_at: string;
 }
 

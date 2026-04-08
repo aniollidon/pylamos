@@ -14,11 +14,12 @@ from app.models.chat import (
 )
 from app.schemas.chat import (
     ConversationCreate, ConversationOut, ConversationDetailOut,
-    MessageCreate, MessageOut,
+    MessageCreate, MessageOut, ExecutionInfo,
 )
 from app.services.llm_service import llm_service, ROLE_MAP
 from app.utils.prompt_builder import build_system_prompt
 from app.utils.security import get_current_user, require_role
+from app.utils.submission_utils import save_code_version
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -33,6 +34,70 @@ Regles prioritaries:
 3) No ignoris la seguretat ni inventis dades, pero no desviis la resposta cap a altres objectius si el professor ha donat una ordre clara.
 4) Respon de manera clara i accionable segons la peticio del professor.
 """.strip()
+
+
+def _format_execution_info(execution: ExecutionInfo | None) -> str | None:
+    if not execution:
+        return None
+
+    lines = [
+        "[ESTAT_D_EXECUCIO]",
+        f"status: {execution.status}",
+        f"compiled: {'yes' if execution.compiled else 'no'}",
+        f"executed: {'yes' if execution.executed else 'no'}",
+        f"can_mark_resolved: {'yes' if execution.can_mark_resolved else 'no'}",
+    ]
+    if execution.line is not None:
+        lines.append(f"line: {execution.line}")
+    if execution.error_type:
+        lines.append(f"error_type: {execution.error_type}")
+    if execution.error_message:
+        lines.append(f"error_message: {execution.error_message}")
+    lines.append("[/ESTAT_D_EXECUCIO]")
+    return "\n".join(lines)
+
+
+def _can_mark_resolved(execution: ExecutionInfo | None) -> bool:
+    return bool(execution and execution.status == "ok" and execution.can_mark_resolved)
+
+
+def _get_resolution_block_note(language: str, execution: ExecutionInfo | None) -> str:
+    status = execution.status if execution else "unknown"
+
+    if language == "es":
+        reasons = {
+            "compile_error": "el código actual tiene errores de compilación",
+            "runtime_error": "el código actual falla en ejecución",
+            "stdin_needed": "la ejecución actual aún espera entrada",
+            "compile_ok": "el código compila, pero no consta una ejecución correcta del código actual",
+            "unknown": "no consta una ejecución correcta del código actual",
+        }
+        return f"No se puede marcar como correcto porque {reasons.get(status, reasons['unknown'])}."
+
+    if language == "en":
+        reasons = {
+            "compile_error": "the current code has compilation errors",
+            "runtime_error": "the current code fails at runtime",
+            "stdin_needed": "the current execution is still waiting for input",
+            "compile_ok": "the code compiles, but there is no successful execution recorded for the current code",
+            "unknown": "there is no successful execution recorded for the current code",
+        }
+        return f"It cannot be marked as correct because {reasons.get(status, reasons['unknown'])}."
+
+    reasons = {
+        "compile_error": "el codi actual té errors de compilació",
+        "runtime_error": "el codi actual falla en execució",
+        "stdin_needed": "l'execució actual encara està pendent d'entrada",
+        "compile_ok": "el codi compila, però no consta una execució correcta del codi actual",
+        "unknown": "no consta una execució correcta del codi actual",
+    }
+    return f"No es pot marcar com a correcte perquè {reasons.get(status, reasons['unknown'])}."
+
+
+def _enforce_execution_guard(result: str | None, execution: ExecutionInfo | None) -> str | None:
+    if result != "correct":
+        return result
+    return "correct" if _can_mark_resolved(execution) else "incorrect"
 
 
 @router.post("/submissions/{submission_id}/conversations", response_model=ConversationDetailOut)
@@ -83,13 +148,14 @@ async def create_conversation(
     )
     db.add(sys_msg)
 
-    # Save user message with code
+    # Save user message with code version
+    version = await save_code_version(db, submission_id, body.code)
     initial_text = "Avalua el meu codi" if mode == "evaluate" else "Necessito ajuda"
     user_msg = ChatMessage(
         conversation_id=conv.id,
         role=MessageRole.user,
         content=initial_text,
-        code_snapshot=body.code,
+        version_id=version.id,
     )
     db.add(user_msg)
     await db.flush()
@@ -101,12 +167,16 @@ async def create_conversation(
             history=[],
             user_message=initial_text,
             code_snapshot=body.code,
+            execution_info=_format_execution_info(body.execution),
         )
     except Exception as e:
         llm_response = f"Error connectant amb la IA: {str(e)}"
 
     display_response = llm_service.strip_result_markers(llm_response)
-    result = llm_service.parse_result(llm_response)
+    raw_result = llm_service.parse_result(llm_response)
+    result = _enforce_execution_guard(raw_result, body.execution)
+    if raw_result == "correct" and result != "correct":
+        display_response = f"{display_response}\n\n{_get_resolution_block_note(current_user.language, body.execution)}"
 
     # Save assistant response
     assistant_msg = ChatMessage(
@@ -191,11 +261,20 @@ async def send_message(
         msg_role = MessageRole.user
 
     # Save user/teacher message
+    version_id = None
+    if body.code is not None:
+        sub_for_version = await db.execute(
+            select(Submission).where(Submission.id == conv.submission_id)
+        )
+        sub_obj = sub_for_version.scalar_one()
+        version = await save_code_version(db, sub_obj.id, body.code)
+        version_id = version.id
+
     user_msg = ChatMessage(
         conversation_id=conversation_id,
         role=msg_role,
         content=body.content,
-        code_snapshot=body.code,
+        version_id=version_id,
     )
     db.add(user_msg)
     await db.flush()
@@ -221,8 +300,14 @@ async def send_message(
         content = msg.content
         if msg.role == MessageRole.teacher:
             content = f"[PROFESSOR: {content}]"
-        if msg.code_snapshot:
-            content = f"Codi de l'alumne:\n```python\n{msg.code_snapshot}\n```\n\n{content}"
+        # Get code from version (preferred) or fallback to code_snapshot
+        msg_code = None
+        if msg.version:
+            msg_code = msg.version.code
+        elif msg.code_snapshot:
+            msg_code = msg.code_snapshot
+        if msg_code:
+            content = f"Codi de l'alumne:\n```python\n{msg_code}\n```\n\n{content}"
         history.append({"role": gemini_role, "content": content})
 
     # New message for LLM
@@ -246,12 +331,16 @@ async def send_message(
             history=history,
             user_message=new_content,
             code_snapshot=body.code,
+            execution_info=_format_execution_info(body.execution),
         )
     except Exception as e:
         llm_response = f"Error connectant amb la IA: {str(e)}"
 
     display_response = llm_service.strip_result_markers(llm_response)
-    result = llm_service.parse_result(llm_response)
+    raw_result = llm_service.parse_result(llm_response)
+    result = _enforce_execution_guard(raw_result, body.execution)
+    if raw_result == "correct" and result != "correct":
+        display_response = f"{display_response}\n\n{_get_resolution_block_note(current_user.language, body.execution)}"
 
     # Save assistant response
     assistant_msg = ChatMessage(

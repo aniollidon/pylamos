@@ -233,20 +233,14 @@
   border-radius: var(--radius);
   max-width: 100%;
   overflow-x: auto;
+  margin: 6px 0;
 }
 
-/* Keep code blocks flush with pre padding; avoid extra offset on first line */
 .markdown-preview pre code {
   padding: 0 !important;
-  background: none;
+  background: none !important;
   border-radius: 0;
-}
-
-/* SyntaxHighlighter uses PreTag="div", so its inner <pre> must not get double padding */
-.markdown-preview div > pre {
-  padding: 0;
-  background: none;
-  margin: 0;
+  color: inherit;
 }
 
 .exercise-editor-wrapper {

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -7,7 +7,7 @@ from app.models.user import User, UserRole
 from app.models.submission import Submission, SubmissionVersion
 from app.models.chat import ChatConversation, ChatMessage
 from app.models.topic import TopicUnlock
-from app.models.class_ import ClassMember
+from app.models.class_ import Class, ClassMember
 from app.schemas.user import UserCreate, UserUpdate, UserOut
 from app.utils.security import get_current_user, require_role, hash_password
 
@@ -98,6 +98,14 @@ async def delete_user(
         raise HTTPException(status_code=404, detail="User not found")
     if user.id == current_user.id:
         raise HTTPException(status_code=400, detail="Cannot delete yourself")
+
+    # Keep classes valid if the deleted user created any.
+    await db.execute(
+        update(Class)
+        .where(Class.created_by == user.id)
+        .values(created_by=current_user.id)
+    )
+
     await db.delete(user)
 
 

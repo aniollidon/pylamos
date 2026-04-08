@@ -11,6 +11,7 @@ from app.schemas.exercise import (
     ExerciseCreate, ExerciseUpdate, ExerciseOut, ExerciseDetailOut, ExerciseReorder, ExerciseImportRequest,
 )
 from app.utils.security import get_current_user, require_role
+from app.utils.topic_access import ensure_topic_access
 
 router = APIRouter(prefix="/api", tags=["exercises"])
 
@@ -31,8 +32,9 @@ async def _next_topic_item_order(db: AsyncSession, topic_id: int) -> int:
 async def list_exercises(
     topic_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
+    await ensure_topic_access(db, current_user, topic_id)
     result = await db.execute(
         select(Exercise).where(Exercise.topic_id == topic_id).order_by(Exercise.order_index)
     )
@@ -71,6 +73,9 @@ async def get_exercise(
     exercise = result.scalar_one_or_none()
     if not exercise:
         raise HTTPException(status_code=404, detail="Exercise not found")
+
+    await ensure_topic_access(db, current_user, exercise.topic_id)
+
     # Teachers can see solution
     if current_user.role in (UserRole.teacher, UserRole.admin):
         return ExerciseDetailOut.model_validate(exercise)

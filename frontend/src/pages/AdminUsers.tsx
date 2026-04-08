@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import api from '../api/client';
+import { useAuth } from '../contexts/AuthContext';
 import type { User } from '../types';
 import './Admin.css';
 
 export default function AdminUsers() {
   const { t } = useTranslation();
+  const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editUser, setEditUser] = useState<User | null>(null);
@@ -49,6 +51,22 @@ export default function AdminUsers() {
     load();
   };
 
+  const handleDeleteUser = async (u: User) => {
+    const confirmed = window.confirm(
+      `Vols eliminar l'usuari ${u.full_name} (@${u.username})?\n\n` +
+      'Aquesta accio no es pot desfer.'
+    );
+    if (!confirmed) return;
+
+    try {
+      await api.delete(`/api/users/${u.id}`);
+      load();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'No s\'ha pogut eliminar l\'usuari';
+      window.alert(message);
+    }
+  };
+
   return (
     <div className="admin-page">
       <div className="admin-toolbar">
@@ -79,6 +97,15 @@ export default function AdminUsers() {
                   style={{ color: '#ff8a8a' }}
                 >
                   Neteja dades
+                </button>
+                <button
+                  className="btn-secondary"
+                  onClick={() => handleDeleteUser(u)}
+                  disabled={currentUser?.id === u.id}
+                  title={currentUser?.id === u.id ? 'No et pots eliminar a tu mateix' : ''}
+                  style={{ color: '#ff8a8a' }}
+                >
+                  {t('delete')}
                 </button>
               </td>
             </tr>

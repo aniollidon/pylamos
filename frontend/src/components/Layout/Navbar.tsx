@@ -33,7 +33,7 @@ export default function Navbar() {
         )}
       </div>
       <div className="navbar-user">
-        <span>{user.full_name} ({user.role})</span>
+        <span>{user.full_name} ({t(user.role)})</span>
         <button onClick={logout}>{t('logout')}</button>
       </div>
     </nav>

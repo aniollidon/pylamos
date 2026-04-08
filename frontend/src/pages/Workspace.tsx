@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import Editor from '@monaco-editor/react';
 import MdRenderer from '../components/MdRenderer';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import { useBrython, type ConsoleEntry, type RunResult } from '../hooks/useBrython';
-import type { Exercise, Submission, Conversation, ChatMessage } from '../types';
+import type { Exercise, Submission, Conversation, ChatMessage, CodeExecutionInfo } from '../types';
 import './Workspace.css';
 
 export default function Workspace() {
@@ -31,9 +31,12 @@ export default function Workspace() {
   const { exerciseId } = useParams<{ exerciseId: string }>();
   const { t } = useTranslation();
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   const [exercise, setExercise] = useState<Exercise | null>(null);
   const [submission, setSubmission] = useState<Submission | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [code, setCode] = useState('# Escriu el teu codi aquí\n');
   const [consoleOutput, setConsoleOutput] = useState<ConsoleEntry[]>([]);
   const [terminalInput, setTerminalInput] = useState('');
@@ -48,14 +51,23 @@ export default function Workspace() {
   const [showConfetti, setShowConfetti] = useState(false);
   const [showSuccessBanner, setShowSuccessBanner] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const pendingNavigationRef = useRef<string | null>(null);
 
   const { run: runBrython } = useBrython();
+
+  const savedCodeRef = useRef<string>('');
+  const isDirty = useRef(false);
 
   const runningCodeRef = useRef<string>('');
   const runningFilenameRef = useRef<string>('exercici.py');
   const runSeedRef = useRef<number>(0);
+  const latestExecutionInfoRef = useRef<CodeExecutionInfo | null>(null);
+  const latestExecutionCodeRef = useRef<string>('');
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const consolePanelRef = useRef<HTMLDivElement>(null);
+  const consoleOutputRef = useRef<HTMLDivElement>(null);
   const terminalInputRef = useRef<HTMLInputElement>(null);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout>>();
   const confettiTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -84,6 +96,98 @@ export default function Workspace() {
       setIsWaitingForInput(false);
     }
   }, []);
+
+  function extractErrorLine(text: string) {
+    const match = text.match(/línia\s+(\d+)/i);
+    return match ? Number(match[1]) : undefined;
+  }
+
+  function extractErrorHeadline(text: string) {
+    const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
+    return lines.find((line) => !/^Error de\s+/i.test(line));
+  }
+
+  function extractErrorType(text?: string) {
+    if (!text) return undefined;
+    const match = text.match(/\b([A-Za-z]+Error)\b/);
+    return match?.[1];
+  }
+
+  function buildExecutionInfoFromResult(result: RunResult): CodeExecutionInfo {
+    if (result.status === 'stdin_needed') {
+      return {
+        status: 'stdin_needed',
+        compiled: true,
+        executed: false,
+        can_mark_resolved: false,
+      };
+    }
+
+    const errorEntry = result.entries.find((entry) => entry.type === 'error');
+    if (!errorEntry) {
+      return {
+        status: 'ok',
+        compiled: true,
+        executed: true,
+        can_mark_resolved: true,
+      };
+    }
+
+    const line = errorEntry.line ?? extractErrorLine(errorEntry.text);
+    const errorMessage = extractErrorHeadline(errorEntry.text);
+    const errorType = extractErrorType(errorEntry.details ?? errorEntry.text);
+    const isCompileError = errorEntry.phase === 'compile';
+
+    return {
+      status: isCompileError ? 'compile_error' : 'runtime_error',
+      compiled: !isCompileError,
+      executed: !isCompileError,
+      can_mark_resolved: false,
+      line,
+      error_type: errorType,
+      error_message: errorMessage,
+    };
+  }
+
+  async function diagnoseExecutionInfo(currentCode: string): Promise<CodeExecutionInfo> {
+    type DiagnoseResult = {
+      has_error: boolean;
+      error_type: string | null;
+      line: number | null;
+      message: string | null;
+    };
+
+    const res = await api.post<DiagnoseResult>('/api/code/diagnose', { code: currentCode });
+    if (res.data.has_error) {
+      return {
+        status: 'compile_error',
+        compiled: false,
+        executed: false,
+        can_mark_resolved: false,
+        line: res.data.line ?? undefined,
+        error_type: res.data.error_type ?? undefined,
+        error_message: res.data.message ?? undefined,
+      };
+    }
+
+    return {
+      status: 'compile_ok',
+      compiled: true,
+      executed: false,
+      can_mark_resolved: false,
+    };
+  }
+
+  async function resolveExecutionInfoForChat(currentCode: string): Promise<CodeExecutionInfo> {
+    if (latestExecutionCodeRef.current === currentCode && latestExecutionInfoRef.current) {
+      return latestExecutionInfoRef.current;
+    }
+
+    const diagnosed = await diagnoseExecutionInfo(currentCode);
+    latestExecutionCodeRef.current = currentCode;
+    latestExecutionInfoRef.current = diagnosed;
+    return diagnosed;
+  }
 
   function getLatestOpenConversation(items: Conversation[]) {
     return [...items].reverse().find((conv) => conv.status !== 'closed') ?? null;
@@ -162,6 +266,8 @@ export default function Workspace() {
     if (!submission) return;
     setSaving(true);
     await api.post(`/api/submissions/${submission.id}/save`, { code });
+    savedCodeRef.current = code;
+    isDirty.current = false;
     setSaving(false);
   };
 
@@ -171,10 +277,18 @@ export default function Workspace() {
     setChatLoading(true);
     setChatInput('');
 
+    // Auto-save before sending a message
+    if (submission && isDirty.current) {
+      await api.post(`/api/submissions/${submission.id}/save`, { code });
+      savedCodeRef.current = code;
+      isDirty.current = false;
+    }
+
     try {
       const loadedConversation = activeConv?.id === targetConversation.id
         ? activeConv
         : await loadConversation(targetConversation);
+      const execution = await resolveExecutionInfoForChat(code);
 
       if (loadedConversation) {
         appendOptimisticUserMessage(loadedConversation.id, content);
@@ -182,7 +296,7 @@ export default function Workspace() {
 
       await api.post<ChatMessage>(
         `/api/conversations/${targetConversation.id}/messages`,
-        { content, code }
+        { content, code, execution }
       );
 
       const convRes = await api.get<Conversation>(`/api/conversations/${targetConversation.id}`);
@@ -205,9 +319,10 @@ export default function Workspace() {
 
     try {
       await handleSave();
+      const execution = await resolveExecutionInfoForChat(code);
       const res = await api.post<Conversation>(
         `/api/submissions/${submission.id}/conversations`,
-        { type, code }
+        { type, code, execution }
       );
       maybeCelebrateFromConversation(res.data);
       setActiveConv(res.data);
@@ -259,34 +374,93 @@ export default function Workspace() {
 
   useEffect(() => {
     if (!exerciseId) return;
-    api.get<Exercise>(`/api/exercises/${exerciseId}`).then((res) => setExercise(res.data));
-    api.post<Submission>(`/api/exercises/${exerciseId}/submissions`).then((res) => {
-      setSubmission(res.data);
-      api.get<{ versions?: { code?: string }[] }>(`/api/submissions/${res.data.id}`).then((detRes) => {
+
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const exerciseRes = await api.get<Exercise>(`/api/exercises/${exerciseId}`);
+        setExercise(exerciseRes.data);
+
+        const submissionRes = await api.post<Submission>(`/api/exercises/${exerciseId}/submissions`);
+        setSubmission(submissionRes.data);
+
+        const detRes = await api.get<{ versions?: { code?: string }[] }>(`/api/submissions/${submissionRes.data.id}`);
         const versions = detRes.data.versions;
         if (versions && versions.length > 0) {
           const latest = versions[versions.length - 1];
-          if (latest.code) setCode(latest.code);
+          if (latest.code) {
+            setCode(latest.code);
+            savedCodeRef.current = latest.code;
+          }
         }
-      });
-      api.get<Conversation[]>(`/api/submissions/${res.data.id}/conversations`).then((convRes) => {
+
+        const convRes = await api.get<Conversation[]>(`/api/submissions/${submissionRes.data.id}/conversations`);
         setConversations(convRes.data);
-      });
-    });
-  }, [exerciseId]);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : t('loading');
+        setError(message);
+
+        if (message.includes('403') || message.includes('Access denied') || message.includes('locked')) {
+          setTimeout(() => navigate('/'), 2500);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void loadData();
+  }, [exerciseId, t, navigate]);
+
+  useEffect(() => {
+    isDirty.current = code !== savedCodeRef.current;
+  }, [code]);
 
   useEffect(() => {
     if (!submission) return;
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
     autoSaveTimer.current = setTimeout(() => {
       api.post(`/api/submissions/${submission.id}/save`, { code });
+      savedCodeRef.current = code;
+      isDirty.current = false;
     }, 30000);
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
   }, [code, submission]);
 
+  // Prompt on browser close/refresh with unsaved changes
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty.current) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, []);
+
+  const handleNavigateAway = useCallback((to: string) => {
+    if (isDirty.current) {
+      pendingNavigationRef.current = to;
+      setShowLeaveModal(true);
+    } else {
+      navigate(to);
+    }
+  }, [navigate]);
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeConv?.messages, chatLoading]);
+
+  useEffect(() => {
+    if (consoleOutput.length === 0 && !isWaitingForInput) return;
+    const panel = consolePanelRef.current;
+    const output = consoleOutputRef.current;
+    panel?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (output) {
+      output.scrollTop = output.scrollHeight;
+    }
+  }, [consoleOutput, isWaitingForInput]);
 
   useEffect(() => {
     if (!chatOpen || isComposingNewConversation || !activeConv?.id) return;
@@ -337,10 +511,16 @@ export default function Workspace() {
     void loadConversation(latestOpen);
   }, [chatOpen, isComposingNewConversation, activeConv, conversations]);
 
-  const handleRun = useCallback(() => {
+  const handleRun = useCallback(async () => {
     const filename = exercise
       ? exercise.title.toLowerCase().replace(/\s+/g, '_').replace(/[^\w]/g, '') + '.py'
       : 'exercici.py';
+    consolePanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (submission) {
+      await api.post(`/api/submissions/${submission.id}/save`, { code });
+      savedCodeRef.current = code;
+      isDirty.current = false;
+    }
     runningCodeRef.current = code;
     runningFilenameRef.current = filename;
     runSeedRef.current = Math.floor(Math.random() * 2 ** 31);
@@ -349,16 +529,63 @@ export default function Workspace() {
     setTerminalInput('');
     const result = runBrython(code, [], runSeedRef.current);
     applyResult({ text: `$ python ${filename}\n`, type: 'info' }, result);
-  }, [code, exercise, runBrython, applyResult]);
+    latestExecutionCodeRef.current = code;
+    latestExecutionInfoRef.current = buildExecutionInfoFromResult(result);
+
+    // Si hi ha un error de compilació, demanem al backend una explicació amigable
+    // (usa compile() sense executar el codi de l'alumne).
+    const hasCompileError = result.entries.some((e) => e.phase === 'compile');
+    if (hasCompileError) {
+      try {
+        type DiagnoseResult = {
+          has_error: boolean;
+          error_type: string | null;
+          line: number | null;
+          message: string | null;
+        };
+        const res = await api.post<DiagnoseResult>('/api/code/diagnose', { code });
+        if (res.data.has_error) {
+          latestExecutionInfoRef.current = {
+            status: 'compile_error',
+            compiled: false,
+            executed: false,
+            can_mark_resolved: false,
+            line: res.data.line ?? undefined,
+            error_type: res.data.error_type ?? undefined,
+            error_message: res.data.message ?? undefined,
+          };
+          setConsoleOutput((prev) =>
+            prev.map((entry) =>
+              entry.phase === 'compile'
+                ? {
+                    ...entry,
+                    text: [
+                      `Error de compilació${res.data.line ? ` (línia ${res.data.line})` : ''}.`,
+                      res.data.message ?? null,
+                    ].filter(Boolean).join('\n') + '\n',
+                    line: res.data.line ?? undefined,
+                  }
+                : entry
+            )
+          );
+        }
+      } catch {
+        // error de xarxa o backend no disponible — ignorar silenciosament
+      }
+    }
+  }, [code, exercise, submission, runBrython, applyResult]);
 
   const handleTerminalSubmit = useCallback(() => {
     if (!isWaitingForInput) return;
+    consolePanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     const value = terminalInput;
     setTerminalInput('');
     const newInputs = [...collectedInputs, value];
     setCollectedInputs(newInputs);
     const result = runBrython(runningCodeRef.current, newInputs, runSeedRef.current);
     applyResult({ text: `$ python ${runningFilenameRef.current}\n`, type: 'info' }, result);
+    latestExecutionCodeRef.current = runningCodeRef.current;
+    latestExecutionInfoRef.current = buildExecutionInfoFromResult(result);
   }, [isWaitingForInput, terminalInput, collectedInputs, runBrython, applyResult]);
 
   const handleEvaluate = async () => {
@@ -373,13 +600,52 @@ export default function Workspace() {
   const statusLabel = submission ? t(submission.status) : '';
   const isCompleted = submission?.status === 'correct' || submission?.status === 'teacher_correct';
 
-  if (!exercise) return <div style={{ padding: 20 }}>{t('loading')}</div>;
+  if (error) {
+    return (
+      <div style={{ padding: 40, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+        <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginBottom: 20 }}>
+          <circle cx="32" cy="32" r="30" stroke="var(--error)" strokeWidth="2" />
+          <line x1="20" y1="20" x2="44" y2="44" stroke="var(--error)" strokeWidth="3" strokeLinecap="round" />
+          <line x1="44" y1="20" x2="20" y2="44" stroke="var(--error)" strokeWidth="3" strokeLinecap="round" />
+        </svg>
+        <h2 style={{ color: 'var(--error)', marginBottom: 12 }}>{t('access_denied')}</h2>
+        <p style={{ color: 'var(--text-secondary)', marginBottom: 24 }}>{t('topic_locked')}</p>
+        <Link to="/" style={{ color: 'var(--text-bright)' }}>{t('back_to_dashboard')}</Link>
+      </div>
+    );
+  }
 
+  if (loading || !exercise) {
+    return <div style={{ padding: 20, textAlign: 'center' }}>{t('loading')}</div>;
+  }
   return (
     <div className="workspace">
+      {showLeaveModal && (
+        <div className="modal-overlay">
+          <div className="modal-dialog">
+            <p>{t('unsaved_changes_prompt')}</p>
+            <div className="modal-actions">
+              <button className="btn-primary" onClick={async () => {
+                await handleSave();
+                setShowLeaveModal(false);
+                if (pendingNavigationRef.current) navigate(pendingNavigationRef.current);
+              }}>{t('save_and_leave')}</button>
+              <button className="btn-secondary" onClick={() => {
+                setShowLeaveModal(false);
+                isDirty.current = false;
+                if (pendingNavigationRef.current) navigate(pendingNavigationRef.current);
+              }}>{t('leave_without_saving')}</button>
+              <button className="btn-secondary" onClick={() => {
+                setShowLeaveModal(false);
+                pendingNavigationRef.current = null;
+              }}>{t('cancel')}</button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="workspace-toolbar">
         <div className="toolbar-left">
-          <Link to="/" style={{ color: 'var(--text-secondary)', fontSize: 13 }}>← {t('dashboard')}</Link>
+          <a href="#" onClick={(e) => { e.preventDefault(); handleNavigateAway('/'); }} style={{ color: 'var(--text-secondary)', fontSize: 13 }}>← {t('dashboard')}</a>
           <span className="exercise-title-bar">{exercise.title}</span>
           {submission && (
             <span className={`status-dot ${submission.status}`} title={statusLabel} />
@@ -391,7 +657,7 @@ export default function Workspace() {
               {saving ? '...' : t('save')}
             </button>
           )}
-          <button className="btn-primary" onClick={handleRun}>▶ {t('run')}</button>
+          <button className="btn-primary" onClick={() => void handleRun()}>▶ {t('run')}</button>
           {!isCompleted && (
             <button className="btn-success" onClick={() => void handleEvaluate()} disabled={chatLoading}>
               {t('evaluate')}
@@ -419,7 +685,7 @@ export default function Workspace() {
           <div className="panel-header editor-header">
             <span>Editor</span>
             <div className="editor-actions">
-              <button className="btn-primary" onClick={handleRun}>▶ {t('run')}</button>
+              <button className="btn-primary" onClick={() => void handleRun()}>▶ {t('run')}</button>
             </div>
           </div>
           <div className="editor-area">
@@ -442,12 +708,24 @@ export default function Workspace() {
             />
           </div>
 
-          <div className="console-panel">
+          <div ref={consolePanelRef} className="console-panel">
             <div className="panel-header">{t('console')}</div>
-            <div className="console-output">
-              {consoleOutput.map((line, i) => (
-                <span key={i} className={`console-line ${line.type}`}>{line.text}</span>
-              ))}
+            <div ref={consoleOutputRef} className="console-output">
+              {consoleOutput.map((line, i) => {
+                if (line.type === 'error' && line.details) {
+                  return (
+                    <div key={i} className="console-line error">
+                      <span className="console-error-summary">{line.text}</span>
+                      <details className="console-error-details">
+                        <summary>Detall tècnic</summary>
+                        <pre>{line.details}</pre>
+                      </details>
+                    </div>
+                  );
+                }
+
+                return <span key={i} className={`console-line ${line.type}`}>{line.text}</span>;
+              })}
             </div>
             {isWaitingForInput && (
               <div className="console-stdin">

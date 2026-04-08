@@ -34,7 +34,13 @@ export default function ClassProgress() {
   const [data, setData] = useState<TopicsProgressData | null>(null);
 
   useEffect(() => {
-    api.get<TopicsProgressData>(`/api/classes/${classId}/progress/topics`).then((r) => setData(r.data));
+    const fetchData = () => {
+      api.get<TopicsProgressData>(`/api/classes/${classId}/progress/topics`)
+        .then((r) => setData(r.data));
+    };
+    fetchData();
+    const interval = setInterval(fetchData, 5000);
+    return () => clearInterval(interval);
   }, [classId]);
 
   if (!data) return <div style={{ padding: 20 }}>{t('loading')}</div>;

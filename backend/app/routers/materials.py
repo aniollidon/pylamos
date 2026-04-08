@@ -17,6 +17,7 @@ from app.schemas.material import (
     MaterialReadOut,
 )
 from app.utils.security import get_current_user, require_role
+from app.utils.topic_access import ensure_topic_access
 
 router = APIRouter(prefix="/api", tags=["materials"])
 
@@ -37,8 +38,9 @@ async def _next_topic_item_order(db: AsyncSession, topic_id: int) -> int:
 async def list_materials(
     topic_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
+    await ensure_topic_access(db, current_user, topic_id)
     result = await db.execute(
         select(Material).where(Material.topic_id == topic_id).order_by(Material.order_index)
     )
@@ -70,12 +72,13 @@ async def create_material(
 async def get_material(
     material_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     result = await db.execute(select(Material).where(Material.id == material_id))
     material = result.scalar_one_or_none()
     if not material:
         raise HTTPException(status_code=404, detail="Material not found")
+    await ensure_topic_access(db, current_user, material.topic_id)
     return material
 
 
@@ -186,6 +189,8 @@ async def get_material_read_status(
     if not material:
         raise HTTPException(status_code=404, detail="Material not found")
 
+    await ensure_topic_access(db, current_user, material.topic_id)
+
     read_result = await db.execute(
         select(MaterialRead).where(
             MaterialRead.material_id == material_id,
@@ -212,6 +217,8 @@ async def mark_material_as_read(
     material = material_result.scalar_one_or_none()
     if not material:
         raise HTTPException(status_code=404, detail="Material not found")
+
+    await ensure_topic_access(db, current_user, material.topic_id)
 
     read_result = await db.execute(
         select(MaterialRead).where(

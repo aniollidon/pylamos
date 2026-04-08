@@ -95,5 +95,12 @@
   "reset_student_data": "Elimina les dades de l'alumne",
   "reset_confirm": "Segur que vols eliminar totes les dades d'aquest alumne per a aquest exercici? Aquesta acció no es pot desfer.",
   "prev_student": "Alumne anterior",
-  "next_student": "Alumne següent"
+  "next_student": "Alumne següent",
+  "access_denied": "Accés denegat",
+  "topic_locked": "Aquest tema està bloquejat. Completa els exercicis anteriors per accedir-hi.",
+  "back_to_dashboard": "Torna al tauler",
+  "unsaved_changes_prompt": "Tens canvis sense desar. Què vols fer?",
+  "save_and_leave": "Desa i surt",
+  "leave_without_saving": "Surt sense desar",
+  "view_code_version": "Veure el codi en aquest moment"
 }
