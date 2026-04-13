@@ -15,7 +15,7 @@ export default function Navbar() {
   return (
     <nav className="navbar">
       <div className="navbar-brand">
-        <span>py</span>lamos
+        <span>py</span>lamós
       </div>
       <div className="navbar-nav">
         <Link to="/" className={location.pathname === '/' ? 'active' : ''}>

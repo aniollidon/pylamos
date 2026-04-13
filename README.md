@@ -1,4 +1,4 @@
-# pylamos
+# pylamós
 
 Plataforma web per aprendre Python. Els alumnes resolen exercicis que s'autocorregeixen, gràcies al feedback d'un professor virtual.
 

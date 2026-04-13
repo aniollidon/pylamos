@@ -30,7 +30,7 @@ export default function Login() {
   return (
     <div className="login-page">
       <div className="login-card">
-        <h1><span>py</span>lamos</h1>
+        <h1><span>py</span>lamós</h1>
         <p className="subtitle">Plataforma d'aprenentatge de Python</p>
         <form onSubmit={handleSubmit}>
           {error && <div className="login-error">{error}</div>}
