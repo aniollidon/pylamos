@@ -1,8 +1,11 @@
 """LLM service for interacting with Google Gemini Flash."""
 
 import asyncio
+import logging
 import re
 import google.generativeai as genai
+
+logger = logging.getLogger(__name__)
 from app.config import settings
 from app.models.chat import MessageRole
 
@@ -84,6 +87,12 @@ class LLMService:
         gemini_history: list[dict],
         full_message: str,
     ) -> str:
+        logger.debug("=== GEMINI REQUEST ===")
+        logger.debug("System prompt:\n%s", system_prompt)
+        for i, msg in enumerate(gemini_history):
+            logger.debug("History[%d] role=%s:\n%s", i, msg["role"], msg["parts"])
+        logger.debug("User message:\n%s", full_message)
+
         model = genai.GenerativeModel(
             self.model_name,
             system_instruction=system_prompt if system_prompt else None,
@@ -97,6 +106,10 @@ class LLMService:
                 max_output_tokens=2048,
             ),
         )
+
+        logger.debug("=== GEMINI RESPONSE ===")
+        logger.debug("%s", response.text)
+
         return response.text
 
     def _is_retryable_error(self, error: Exception) -> bool:
@@ -128,10 +141,15 @@ class LLMService:
             return "incorrect"
         return None
 
+    def has_chat_ended(self, response: str) -> bool:
+        """Check if the LLM ended the chat with [XAT_FINALITZAT]."""
+        return "[XAT_FINALITZAT]" in response
+
     def strip_result_markers(self, response: str) -> str:
         """Remove internal control markers before rendering chat text to users."""
         cleaned = response.replace("[EXERCICI_CORRECTE]", "")
         cleaned = cleaned.replace("[EXERCICI_INCORRECTE]", "")
+        cleaned = cleaned.replace("[XAT_FINALITZAT]", "")
         # Hide teacher-only steering directives that should never appear to students.
         cleaned = re.sub(r"\[\s*PROFESSOR\s*:\s*[^\]]*\]", "", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\[\s*PROFESSOR\s*\]\s*:\s*", "", cleaned, flags=re.IGNORECASE)

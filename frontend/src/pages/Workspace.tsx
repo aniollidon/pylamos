@@ -12,10 +12,12 @@ import './Workspace.css';
 export default function Workspace() {
   const MARKER_CORRECT = '[EXERCICI_CORRECTE]';
   const MARKER_INCORRECT = '[EXERCICI_INCORRECTE]';
+  const MARKER_CHAT_ENDED = '[XAT_FINALITZAT]';
 
   const stripResultMarkers = (text: string) => text
     .split(MARKER_CORRECT).join('')
     .split(MARKER_INCORRECT).join('')
+    .split(MARKER_CHAT_ENDED).join('')
     .replace(/\[\s*PROFESSOR\s*:\s*[^\]]*\]/gim, '')
     .replace(/\[\s*PROFESSOR\s*\]\s*:\s*/gim, '')
     .replace(/\[\s*PROFESSOR\s*:\s*\]\s*/gim, '')
@@ -66,6 +68,7 @@ export default function Workspace() {
   const latestExecutionCodeRef = useRef<string>('');
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const prevMessageCountRef = useRef<number>(0);
   const consolePanelRef = useRef<HTMLDivElement>(null);
   const consoleOutputRef = useRef<HTMLDivElement>(null);
   const terminalInputRef = useRef<HTMLInputElement>(null);
@@ -449,7 +452,11 @@ export default function Workspace() {
   }, [navigate]);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const count = activeConv?.messages?.length ?? 0;
+    if (count > prevMessageCountRef.current || chatLoading) {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+    prevMessageCountRef.current = count;
   }, [activeConv?.messages, chatLoading]);
 
   useEffect(() => {
@@ -599,6 +606,7 @@ export default function Workspace() {
 
   const statusLabel = submission ? t(submission.status) : '';
   const isCompleted = submission?.status === 'correct' || submission?.status === 'teacher_correct';
+  const isChatBlocked = submission?.chat_blocked === true;
 
   if (error) {
     return (
@@ -648,7 +656,7 @@ export default function Workspace() {
           <a href="#" onClick={(e) => { e.preventDefault(); handleNavigateAway('/'); }} style={{ color: 'var(--text-secondary)', fontSize: 13 }}>← {t('dashboard')}</a>
           <span className="exercise-title-bar">{exercise.title}</span>
           {submission && (
-            <span className={`status-dot ${submission.status}`} title={statusLabel} />
+            <span className={`status-dot ${submission.status}${isChatBlocked ? ' chat-blocked' : ''}`} title={isChatBlocked ? t('chat_blocked_student') : statusLabel} />
           )}
         </div>
         <div className="toolbar-right">
@@ -659,7 +667,7 @@ export default function Workspace() {
           )}
           <button className="btn-primary" onClick={() => void handleRun()}>▶ {t('run')}</button>
           {!isCompleted && (
-            <button className="btn-success" onClick={() => void handleEvaluate()} disabled={chatLoading}>
+            <button className="btn-success" onClick={() => void handleEvaluate()} disabled={chatLoading || isChatBlocked}>
               {t('evaluate')}
             </button>
           )}
@@ -766,7 +774,7 @@ export default function Workspace() {
           <div className="panel-header">
             <span>{t('chat')}</span>
             <div className="chat-header-actions">
-              {!isCompleted && (
+              {!isCompleted && !isChatBlocked && (
                 <button className="chat-new-button" onClick={openNewConversationComposer} title={t('new_conversation')}>
                   +
                 </button>
@@ -795,7 +803,7 @@ export default function Workspace() {
             {!activeConv && !chatLoading && (
               <div className="chat-empty-state">
                 <div className="chat-empty-title">{t('chat_empty_title')}</div>
-                {!isCompleted && (
+                {!isCompleted && !isChatBlocked && (
                   <div className="chat-empty-actions">
                     <button className="chat-choice-button" onClick={() => void startFreshConversation('help')}>
                       {t('chat_choice_help')}
@@ -836,7 +844,11 @@ export default function Workspace() {
             <div className="chat-status">{t('conversation_closed')}</div>
           )}
 
-          {activeConv && activeConv.status !== 'closed' && !isCompleted && (
+          {isChatBlocked && (
+            <div className="chat-status chat-blocked">{t('chat_blocked_student')}</div>
+          )}
+
+          {activeConv && activeConv.status !== 'closed' && !isCompleted && !isChatBlocked && (
             <>
               <div className="chat-suggestions">
                 {suggestionPrompts.map((suggestion) => (

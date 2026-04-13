@@ -13,9 +13,15 @@ interface StudentRef {
   name: string;
 }
 
+interface ExerciseRef {
+  exerciseId: number;
+  title: string;
+}
+
 interface LocationState {
   classId?: number;
   students?: StudentRef[];
+  exercises?: ExerciseRef[];
 }
 
 export default function TeacherReview() {
@@ -29,7 +35,9 @@ export default function TeacherReview() {
     () => (state.students ? [...state.students].sort((a, b) => a.name.localeCompare(b.name, 'ca')) : []),
     [state.students]
   );
+  const exercises: ExerciseRef[] = useMemo(() => state.exercises ?? [], [state.exercises]);
   const currentIndex = sortedStudents.findIndex((s) => s.userId === Number(userId));
+  const currentExIndex = exercises.findIndex((e) => e.exerciseId === Number(exerciseId));
 
   const [exercise, setExercise] = useState<Exercise | null>(null);
   const [submission, setSubmission] = useState<Submission | null>(null);
@@ -42,6 +50,7 @@ export default function TeacherReview() {
   const [resetLoading, setResetLoading] = useState(false);
   const [studentFullName, setStudentFullName] = useState<string>('');
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const prevMessageCountRef = useRef<number>(0);
 
   useEffect(() => {
     if (!exerciseId) return;
@@ -92,7 +101,11 @@ export default function TeacherReview() {
   }, [exerciseId, userId, sortedStudents]);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const count = activeConv?.messages?.length ?? 0;
+    if (count > prevMessageCountRef.current) {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+    prevMessageCountRef.current = count;
   }, [activeConv?.messages]);
 
   const loadConversation = async (conv: Conversation) => {
@@ -153,9 +166,21 @@ export default function TeacherReview() {
     }
   };
 
+  const handleUnblockChat = async () => {
+    if (!submission) return;
+    await api.post(`/api/submissions/${submission.id}/unblock-chat`);
+    setSubmission({ ...submission, chat_blocked: false });
+  };
+
   const navigateToStudent = (student: StudentRef) => {
     navigate(`/exercise/${exerciseId}/review/${student.userId}`, {
-      state: { classId, students: state.students },
+      state: { classId, students: state.students, exercises: state.exercises },
+    });
+  };
+
+  const navigateToExercise = (ex: ExerciseRef) => {
+    navigate(`/exercise/${ex.exerciseId}/review/${userId}`, {
+      state: { classId, students: state.students, exercises: state.exercises },
     });
   };
 
@@ -174,40 +199,72 @@ export default function TeacherReview() {
           >
             ← {t('class_progress')}
           </Link>
-          <span className="exercise-title-bar">{t('review')}: {exercise.title}</span>
-          <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{studentName}</span>
-          {submission && <span className={`status-dot ${submission.status}`} title={t(submission.status)} />}
-        </div>
-        <div className="toolbar-right">
-          {sortedStudents.length > 0 && (
-            <>
+
+          {/* Exercise navigator */}
+          {exercises.length > 0 ? (
+            <span className="nav-group">
               <button
-                className="btn-secondary"
-                style={{ fontSize: 12, padding: '3px 10px' }}
+                className="btn-nav"
+                disabled={currentExIndex <= 0}
+                title={t('prev_exercise')}
+                onClick={() => navigateToExercise(exercises[currentExIndex - 1])}
+              >
+                ‹
+              </button>
+              <span className="nav-label exercise">{exercise.title}</span>
+              <button
+                className="btn-nav"
+                disabled={currentExIndex >= exercises.length - 1}
+                title={t('next_exercise')}
+                onClick={() => navigateToExercise(exercises[currentExIndex + 1])}
+              >
+                ›
+              </button>
+            </span>
+          ) : (
+            <span className="nav-label exercise">{exercise.title}</span>
+          )}
+
+          {/* Student navigator */}
+          {sortedStudents.length > 0 ? (
+            <span className="nav-group">
+              <button
+                className="btn-nav"
                 disabled={currentIndex <= 0}
                 title={t('prev_student')}
                 onClick={() => navigateToStudent(sortedStudents[currentIndex - 1])}
               >
                 ‹
               </button>
-              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                {currentIndex + 1}/{sortedStudents.length}
-              </span>
+              <span className="nav-label student">{studentName}</span>
               <button
-                className="btn-secondary"
-                style={{ fontSize: 12, padding: '3px 10px' }}
+                className="btn-nav"
                 disabled={currentIndex >= sortedStudents.length - 1}
                 title={t('next_student')}
                 onClick={() => navigateToStudent(sortedStudents[currentIndex + 1])}
               >
                 ›
               </button>
-            </>
+            </span>
+          ) : (
+            <span className="nav-label student">{studentName}</span>
           )}
+
+          {submission && <span className={`status-dot ${submission.status}${submission.chat_blocked ? ' chat-blocked' : ''}`} title={submission.chat_blocked ? t('chat_blocked_teacher') : t(submission.status)} />}
+          {submission?.chat_blocked && (
+            <span style={{ fontSize: 11, color: 'var(--error)', fontWeight: 500 }}>🔒 {t('chat_blocked_label')}</span>
+          )}
+        </div>
+        <div className="toolbar-right">
           {submission && (
             <>
               <button className="btn-success" onClick={() => handleOverride('teacher_correct')}>{t('mark_correct')}</button>
               <button className="btn-danger" onClick={() => handleOverride('teacher_incorrect')}>{t('mark_incorrect')}</button>
+              {submission.chat_blocked && (
+                <button className="btn-warning" onClick={handleUnblockChat} title={t('unblock_chat')}>
+                  🔓 {t('unblock_chat')}
+                </button>
+              )}
               <button
                 className="btn-danger"
                 style={{ fontSize: 12 }}

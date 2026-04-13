@@ -58,6 +58,7 @@ export interface Submission {
   exercise_id: number;
   user_id: number;
   status: SubmissionStatus;
+  chat_blocked: boolean;
   created_at: string;
   updated_at: string;
   versions?: SubmissionVersion[];

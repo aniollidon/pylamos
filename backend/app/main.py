@@ -1,8 +1,12 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
+
+logging.basicConfig(level=logging.INFO)
+logging.getLogger("app.services.llm_service").setLevel(logging.DEBUG)
 
 from app.config import settings
 from app.database import engine, Base

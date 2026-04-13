@@ -80,6 +80,13 @@ export default function ClassProgress() {
                     state: {
                       classId: Number(classId),
                       students: data.students.map((s) => ({ userId: s.user_id, name: s.full_name })),
+                      exercises: data.topics.flatMap((tp) => {
+                        const first = data.students.find((s) => s.topics[String(tp.id)]?.exercises?.length);
+                        return (first?.topics[String(tp.id)]?.exercises ?? [])
+                          .slice()
+                          .sort((a, b) => (a.order_index ?? Infinity) - (b.order_index ?? Infinity))
+                          .map((e) => ({ exerciseId: e.exercise_id, title: e.title }));
+                      }),
                     },
                     order_index: ex.order_index ?? Number.MAX_SAFE_INTEGER,
                   })),

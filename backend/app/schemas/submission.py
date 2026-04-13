@@ -21,6 +21,7 @@ class SubmissionOut(BaseModel):
     exercise_id: int
     user_id: int
     status: SubmissionStatus
+    chat_blocked: bool = False
     created_at: datetime
     updated_at: datetime
 

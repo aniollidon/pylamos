@@ -85,6 +85,12 @@ button:disabled {
   color: #fff;
 }
 
+.btn-warning {
+  background-color: var(--warning, #ff9800);
+  color: #1e1e1e;
+  font-weight: 500;
+}
+
 .btn-secondary {
   background-color: var(--bg-input);
   color: var(--text-primary);

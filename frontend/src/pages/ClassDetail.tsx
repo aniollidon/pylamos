@@ -55,10 +55,11 @@ function SortableExercise({ exercise, onMove, onDelete }: SortableExerciseProps)
 
 interface SortableMaterialProps {
   material: Material;
+  onMove: () => void;
   onDelete: () => void;
 }
 
-function SortableMaterial({ material, onDelete }: SortableMaterialProps) {
+function SortableMaterial({ material, onMove, onDelete }: SortableMaterialProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `material-${material.id}` });
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -74,6 +75,7 @@ function SortableMaterial({ material, onDelete }: SortableMaterialProps) {
       </Link>
       <ActionMenu
         items={[
+          { label: 'Mou', onClick: onMove },
           { label: 'Elimina', danger: true, onClick: onDelete },
         ]}
       />
@@ -95,6 +97,7 @@ interface SortableTopicProps {
   onImportExercise: () => void;
   onItemsDragEnd: (event: DragEndEvent) => void;
   onMoveExercise: (ex: Exercise) => void;
+  onMoveMaterial: (mat: Material) => void;
   onDeleteExercise: (id: number) => void;
   onDeleteMaterial: (id: number) => void;
 }
@@ -103,7 +106,7 @@ function SortableTopic({
   topic, exercises, materials,
   onEditTopic, onDeleteTopic, onUnlockModeChange,
   onAddExercise, onAddMaterial, onImportExercise,
-  onItemsDragEnd, onMoveExercise, onDeleteExercise, onDeleteMaterial,
+  onItemsDragEnd, onMoveExercise, onMoveMaterial, onDeleteExercise, onDeleteMaterial,
 }: SortableTopicProps) {
   const { t } = useTranslation();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: topic.id });
@@ -175,6 +178,7 @@ function SortableTopic({
               <SortableMaterial
                 key={item.key}
                 material={item.material}
+                onMove={() => onMoveMaterial(item.material)}
                 onDelete={() => onDeleteMaterial(item.id)}
               />
             )
@@ -212,6 +216,7 @@ export default function ClassDetail() {
   const [showAddExercise, setShowAddExercise] = useState<number | null>(null);
   const [newExTitle, setNewExTitle] = useState('');
   const [showMoveExercise, setShowMoveExercise] = useState<number | null>(null);
+  const [showMoveMaterial, setShowMoveMaterial] = useState<number | null>(null);
   const [moveTargetTopicId, setMoveTargetTopicId] = useState<number>(0);
   const [showAddMaterial, setShowAddMaterial] = useState<number | null>(null);
   const [newMaterialTitle, setNewMaterialTitle] = useState('');
@@ -379,6 +384,14 @@ export default function ClassDetail() {
     loadAll();
   };
 
+  const handleMoveMaterial = async () => {
+    if (showMoveMaterial === null || !moveTargetTopicId) return;
+    await api.put(`/api/materials/${showMoveMaterial}`, { topic_id: moveTargetTopicId });
+    setShowMoveMaterial(null);
+    setMoveTargetTopicId(0);
+    loadAll();
+  };
+
   const handleAddMaterial = async () => {
     if (showAddMaterial === null || !newMaterialTitle.trim()) return;
     const res = await api.post<Material>(`/api/topics/${showAddMaterial}/materials`, {
@@ -412,6 +425,11 @@ export default function ClassDetail() {
   const openMoveExercise = (exercise: Exercise) => {
     setShowMoveExercise(exercise.id);
     setMoveTargetTopicId(exercise.topic_id);
+  };
+
+  const openMoveMaterial = (material: Material) => {
+    setShowMoveMaterial(material.id);
+    setMoveTargetTopicId(material.topic_id);
   };
 
   const openImportTopic = async () => {
@@ -526,6 +544,7 @@ export default function ClassDetail() {
               onImportExercise={() => void openImportExercise(topic.id)}
               onItemsDragEnd={handleItemsDragEnd(topic.id)}
               onMoveExercise={openMoveExercise}
+              onMoveMaterial={openMoveMaterial}
               onDeleteExercise={handleDeleteExercise}
               onDeleteMaterial={handleDeleteMaterial}
             />
@@ -613,6 +632,28 @@ export default function ClassDetail() {
             <div className="modal-actions">
               <button className="btn-secondary" onClick={() => setShowMoveExercise(null)}>{t('cancel')}</button>
               <button className="btn-primary" onClick={handleMoveExercise} disabled={!moveTargetTopicId}>{t('confirm')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Move material modal */}
+      {showMoveMaterial !== null && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <h3>Mou material a un altre tema</h3>
+            <div className="form-group">
+              <label>{t('topic')}</label>
+              <select value={moveTargetTopicId} onChange={(e) => setMoveTargetTopicId(Number(e.target.value))}>
+                <option value={0}>--</option>
+                {topics.map((tp) => (
+                  <option key={tp.id} value={tp.id}>{tp.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="modal-actions">
+              <button className="btn-secondary" onClick={() => setShowMoveMaterial(null)}>{t('cancel')}</button>
+              <button className="btn-primary" onClick={handleMoveMaterial} disabled={!moveTargetTopicId}>{t('confirm')}</button>
             </div>
           </div>
         </div>

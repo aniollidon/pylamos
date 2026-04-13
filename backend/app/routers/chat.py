@@ -116,6 +116,8 @@ async def create_conversation(
         raise HTTPException(status_code=404, detail="Submission not found")
     if current_user.role == UserRole.student and submission.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
+    if current_user.role == UserRole.student and submission.chat_blocked:
+        raise HTTPException(status_code=403, detail="Chat blocked")
 
     ex_result = await db.execute(select(Exercise).where(Exercise.id == submission.exercise_id))
     exercise = ex_result.scalar_one()
@@ -193,9 +195,11 @@ async def create_conversation(
     elif result == "incorrect":
         submission.status = SubmissionStatus.incorrect
 
-    await db.flush()
+    # Detect chat ended by bot
+    if llm_service.has_chat_ended(llm_response):
+        submission.chat_blocked = True
 
-    # Return conversation with messages
+    await db.flush()
     conv_result = await db.execute(
         select(ChatConversation)
         .options(selectinload(ChatConversation.messages))
@@ -253,6 +257,15 @@ async def send_message(
         raise HTTPException(status_code=404, detail="Conversation not found")
     if conv.status == ConversationStatus.closed:
         raise HTTPException(status_code=400, detail="Conversation is closed")
+
+    # Check chat_blocked for students
+    if current_user.role == UserRole.student:
+        sub_blocked_check = await db.execute(
+            select(Submission).where(Submission.id == conv.submission_id)
+        )
+        sub_blocked = sub_blocked_check.scalar_one()
+        if sub_blocked.chat_blocked:
+            raise HTTPException(status_code=403, detail="Chat blocked")
 
     # Determine role
     if current_user.role in (UserRole.teacher, UserRole.admin):
@@ -363,6 +376,10 @@ async def send_message(
     ):
         submission.status = SubmissionStatus.incorrect
 
+    # Detect chat ended by bot
+    if llm_service.has_chat_ended(llm_response):
+        submission.chat_blocked = True
+
     await db.flush()
     await db.refresh(assistant_msg)
     return assistant_msg
@@ -400,3 +417,20 @@ async def reopen_conversation(
     conv.status = ConversationStatus.reopened
     await db.flush()
     return {"detail": "Conversation reopened"}
+
+
+@router.post("/submissions/{submission_id}/unblock-chat")
+async def unblock_chat(
+    submission_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.teacher, UserRole.admin)),
+):
+    result = await db.execute(
+        select(Submission).where(Submission.id == submission_id)
+    )
+    submission = result.scalar_one_or_none()
+    if not submission:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    submission.chat_blocked = False
+    await db.flush()
+    return {"detail": "Chat unblocked"}

@@ -316,7 +316,7 @@
   border: 1px solid var(--border-color);
   border-radius: var(--radius);
   margin-bottom: 12px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .topic-section-header {
