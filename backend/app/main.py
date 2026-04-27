@@ -22,7 +22,11 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
         await _ensure_chat_message_verdict_column(conn)
         await _ensure_chat_message_version_id_column(conn)
+        await _ensure_chat_message_teacher_command_meta_column(conn)
+        await _ensure_chat_conversation_teacher_policy_state_column(conn)
         await _ensure_topic_unlock_mode_column(conn)
+        await _ensure_topic_is_hidden_column(conn)
+        await _ensure_exercise_is_hidden_column(conn)
     # Seed admin user if no users exist
     await _seed_admin()
     yield
@@ -42,11 +46,39 @@ async def _ensure_chat_message_version_id_column(conn):
         await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN version_id INTEGER REFERENCES submission_versions(id)"))
 
 
+async def _ensure_chat_message_teacher_command_meta_column(conn):
+    result = await conn.execute(text("PRAGMA table_info(chat_messages)"))
+    columns = {row[1] for row in result.fetchall()}
+    if "teacher_command_meta" not in columns:
+        await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN teacher_command_meta TEXT"))
+
+
+async def _ensure_chat_conversation_teacher_policy_state_column(conn):
+    result = await conn.execute(text("PRAGMA table_info(chat_conversations)"))
+    columns = {row[1] for row in result.fetchall()}
+    if "teacher_policy_state" not in columns:
+        await conn.execute(text("ALTER TABLE chat_conversations ADD COLUMN teacher_policy_state TEXT"))
+
+
 async def _ensure_topic_unlock_mode_column(conn):
     result = await conn.execute(text("PRAGMA table_info(topics)"))
     columns = {row[1] for row in result.fetchall()}
     if "unlock_mode" not in columns:
         await conn.execute(text("ALTER TABLE topics ADD COLUMN unlock_mode VARCHAR(20) NOT NULL DEFAULT 'auto'"))
+
+
+async def _ensure_topic_is_hidden_column(conn):
+    result = await conn.execute(text("PRAGMA table_info(topics)"))
+    columns = {row[1] for row in result.fetchall()}
+    if "is_hidden" not in columns:
+        await conn.execute(text("ALTER TABLE topics ADD COLUMN is_hidden BOOLEAN NOT NULL DEFAULT 0"))
+
+
+async def _ensure_exercise_is_hidden_column(conn):
+    result = await conn.execute(text("PRAGMA table_info(exercises)"))
+    columns = {row[1] for row in result.fetchall()}
+    if "is_hidden" not in columns:
+        await conn.execute(text("ALTER TABLE exercises ADD COLUMN is_hidden BOOLEAN NOT NULL DEFAULT 0"))
 
 
 async def _seed_admin():

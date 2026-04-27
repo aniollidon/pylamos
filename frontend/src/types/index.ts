@@ -29,6 +29,7 @@ export interface Topic {
   name: string;
   order_index: number;
   unlock_mode: string; // 'auto' | 'open' | 'locked'
+  is_hidden: boolean;
   created_at: string;
 }
 
@@ -38,6 +39,7 @@ export interface Exercise {
   title: string;
   description: string;
   order_index: number;
+  is_hidden: boolean;
   created_at: string;
   solution?: string;
   system_prompt_override?: string;

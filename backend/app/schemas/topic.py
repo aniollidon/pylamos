@@ -6,6 +6,7 @@ class TopicBase(BaseModel):
     name: str
     order_index: int = 0
     unlock_mode: str = "auto"
+    is_hidden: bool = False
 
 
 class TopicCreate(TopicBase):
@@ -16,6 +17,7 @@ class TopicUpdate(BaseModel):
     name: str | None = None
     order_index: int | None = None
     unlock_mode: str | None = None
+    is_hidden: bool | None = None
 
 
 class TopicOut(TopicBase):

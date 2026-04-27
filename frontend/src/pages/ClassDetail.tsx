@@ -27,9 +27,11 @@ interface SortableExerciseProps {
   exercise: Exercise;
   onMove: () => void;
   onDelete: () => void;
+  onToggleVisibility: () => void;
 }
 
-function SortableExercise({ exercise, onMove, onDelete }: SortableExerciseProps) {
+function SortableExercise({ exercise, onMove, onDelete, onToggleVisibility }: SortableExerciseProps) {
+  const { t } = useTranslation();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `exercise-${exercise.id}` });
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -41,10 +43,11 @@ function SortableExercise({ exercise, onMove, onDelete }: SortableExerciseProps)
     <div ref={setNodeRef} style={style} className="exercise-row">
       <span className="drag-handle" {...attributes} {...listeners} title="Arrossega per reordenar">⠿</span>
       <Link className="row-title-button" to={`/exercises/${exercise.id}/edit`} style={{ flex: 1 }}>
-        {exercise.title}
+        {exercise.title} {exercise.is_hidden ? <span className="visibility-badge">(ocult)</span> : null}
       </Link>
       <ActionMenu
         items={[
+          { label: exercise.is_hidden ? t('show_to_students') : t('hide_from_students'), onClick: onToggleVisibility },
           { label: 'Mou', onClick: onMove },
           { label: 'Elimina', danger: true, onClick: onDelete },
         ]}
@@ -91,6 +94,7 @@ interface SortableTopicProps {
   materials: Material[];
   onEditTopic: () => void;
   onDeleteTopic: () => void;
+  onToggleTopicVisibility: () => void;
   onUnlockModeChange: (mode: string) => void;
   onAddExercise: () => void;
   onAddMaterial: () => void;
@@ -99,14 +103,15 @@ interface SortableTopicProps {
   onMoveExercise: (ex: Exercise) => void;
   onMoveMaterial: (mat: Material) => void;
   onDeleteExercise: (id: number) => void;
+  onToggleExerciseVisibility: (ex: Exercise) => void;
   onDeleteMaterial: (id: number) => void;
 }
 
 function SortableTopic({
   topic, exercises, materials,
-  onEditTopic, onDeleteTopic, onUnlockModeChange,
+  onEditTopic, onDeleteTopic, onToggleTopicVisibility, onUnlockModeChange,
   onAddExercise, onAddMaterial, onImportExercise,
-  onItemsDragEnd, onMoveExercise, onMoveMaterial, onDeleteExercise, onDeleteMaterial,
+  onItemsDragEnd, onMoveExercise, onMoveMaterial, onDeleteExercise, onToggleExerciseVisibility, onDeleteMaterial,
 }: SortableTopicProps) {
   const { t } = useTranslation();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: topic.id });
@@ -140,7 +145,9 @@ function SortableTopic({
     <div ref={setNodeRef} style={style} className="topic-section">
       <div className="topic-section-header">
         <span className="drag-handle topic-drag-handle" {...attributes} {...listeners} title="Arrossega per reordenar">⠿</span>
-        <h4 style={{ flex: 1 }}>{topic.name}</h4>
+        <h4 style={{ flex: 1 }}>
+          {topic.name} {topic.is_hidden ? <span className="visibility-badge">(ocult)</span> : null}
+        </h4>
         <select
           className="unlock-mode-select"
           value={topic.unlock_mode || 'auto'}
@@ -156,6 +163,7 @@ function SortableTopic({
           <button className="btn-primary" onClick={onAddMaterial}>+ {t('add_material')}</button>
           <ActionMenu
             items={[
+              { label: topic.is_hidden ? t('show_to_students') : t('hide_from_students'), onClick: onToggleTopicVisibility },
               { label: t('edit'), onClick: onEditTopic },
               { label: t('import_exercise'), onClick: onImportExercise },
               { label: t('delete'), danger: true, onClick: onDeleteTopic },
@@ -173,6 +181,7 @@ function SortableTopic({
                 exercise={item.exercise}
                 onMove={() => onMoveExercise(item.exercise)}
                 onDelete={() => onDeleteExercise(item.id)}
+                onToggleVisibility={() => onToggleExerciseVisibility(item.exercise)}
               />
             ) : (
               <SortableMaterial
@@ -321,6 +330,23 @@ export default function ClassDetail() {
   const handleUnlockModeChange = async (topicId: number, mode: string) => {
     setTopics((prev) => prev.map((t) => t.id === topicId ? { ...t, unlock_mode: mode } : t));
     await api.put(`/api/topics/${topicId}`, { unlock_mode: mode });
+  };
+
+  const handleToggleTopicVisibility = async (topic: Topic) => {
+    const nextHidden = !topic.is_hidden;
+    setTopics((prev) => prev.map((t) => t.id === topic.id ? { ...t, is_hidden: nextHidden } : t));
+    await api.put(`/api/topics/${topic.id}`, { is_hidden: nextHidden });
+  };
+
+  const handleToggleExerciseVisibility = async (exercise: Exercise) => {
+    const nextHidden = !exercise.is_hidden;
+    setExercisesByTopic((prev) => ({
+      ...prev,
+      [exercise.topic_id]: (prev[exercise.topic_id] || []).map((ex) => (
+        ex.id === exercise.id ? { ...ex, is_hidden: nextHidden } : ex
+      )),
+    }));
+    await api.put(`/api/exercises/${exercise.id}`, { is_hidden: nextHidden });
   };
 
   // ── Members ──
@@ -538,6 +564,7 @@ export default function ClassDetail() {
               materials={materialsByTopic[topic.id] || []}
               onEditTopic={() => openEditTopic(topic)}
               onDeleteTopic={() => handleDeleteTopic(topic.id)}
+              onToggleTopicVisibility={() => void handleToggleTopicVisibility(topic)}
               onUnlockModeChange={(mode) => handleUnlockModeChange(topic.id, mode)}
               onAddExercise={() => { setShowAddExercise(topic.id); setNewExTitle(''); }}
               onAddMaterial={() => { setShowAddMaterial(topic.id); setNewMaterialTitle(''); }}
@@ -546,6 +573,7 @@ export default function ClassDetail() {
               onMoveExercise={openMoveExercise}
               onMoveMaterial={openMoveMaterial}
               onDeleteExercise={handleDeleteExercise}
+              onToggleExerciseVisibility={(exercise) => void handleToggleExerciseVisibility(exercise)}
               onDeleteMaterial={handleDeleteMaterial}
             />
           ))}

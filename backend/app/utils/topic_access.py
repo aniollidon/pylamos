@@ -14,7 +14,7 @@ COMPLETED_STATUSES = {SubmissionStatus.correct, SubmissionStatus.teacher_correct
 
 async def _all_topic_items_completed(db: AsyncSession, topic_id: int, user_id: int) -> bool:
     exercises_result = await db.execute(
-        select(Exercise.id).where(Exercise.topic_id == topic_id)
+        select(Exercise.id).where(Exercise.topic_id == topic_id, Exercise.is_hidden.is_(False))
     )
     exercise_ids = [row[0] for row in exercises_result.all()]
     for exercise_id in exercise_ids:
@@ -70,7 +70,7 @@ async def _is_topic_unlocked_for_student(db: AsyncSession, topic: Topic, user_id
 
     topics_result = await db.execute(
         select(Topic)
-        .where(Topic.class_id == topic.class_id)
+        .where(Topic.class_id == topic.class_id, Topic.is_hidden.is_(False))
         .order_by(Topic.order_index)
     )
     ordered_topics = topics_result.scalars().all()
@@ -98,6 +98,9 @@ async def ensure_topic_access(
     if current_user.role != UserRole.student:
         return topic
 
+    if topic.is_hidden:
+        raise HTTPException(status_code=404, detail="Topic not found")
+
     membership_result = await db.execute(
         select(ClassMember).where(
             ClassMember.class_id == topic.class_id,
@@ -113,3 +116,21 @@ async def ensure_topic_access(
         raise HTTPException(status_code=403, detail="Topic is locked")
 
     return topic
+
+
+async def ensure_exercise_access(
+    db: AsyncSession,
+    current_user: User,
+    exercise_id: int,
+) -> Exercise:
+    exercise_result = await db.execute(select(Exercise).where(Exercise.id == exercise_id))
+    exercise = exercise_result.scalar_one_or_none()
+    if not exercise:
+        raise HTTPException(status_code=404, detail="Exercise not found")
+
+    await ensure_topic_access(db, current_user, exercise.topic_id)
+
+    if current_user.role == UserRole.student and exercise.is_hidden:
+        raise HTTPException(status_code=404, detail="Exercise not found")
+
+    return exercise

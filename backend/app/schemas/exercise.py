@@ -8,6 +8,7 @@ class ExerciseBase(BaseModel):
     solution: str
     system_prompt_override: str | None = None
     order_index: int = 0
+    is_hidden: bool = False
 
 
 class ExerciseCreate(ExerciseBase):
@@ -21,6 +22,7 @@ class ExerciseUpdate(BaseModel):
     system_prompt_override: str | None = None
     order_index: int | None = None
     topic_id: int | None = None
+    is_hidden: bool | None = None
 
 
 class ExerciseOut(BaseModel):
@@ -29,6 +31,7 @@ class ExerciseOut(BaseModel):
     title: str
     description: str
     order_index: int
+    is_hidden: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}

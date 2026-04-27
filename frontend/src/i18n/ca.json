@@ -108,5 +108,7 @@
   "chat_blocked_student": "El bot ha bloquejat el xat d'aquest exercici. Informa el teu professor perquè el pugui desbloquejar.",
   "chat_blocked_teacher": "Xat bloquejat pel bot",
   "chat_blocked_label": "Xat bloquejat",
-  "unblock_chat": "Desbloqueja xat"
+  "unblock_chat": "Desbloqueja xat",
+  "hide_from_students": "Amaga a l'alumnat",
+  "show_to_students": "Mostra a l'alumnat"
 }

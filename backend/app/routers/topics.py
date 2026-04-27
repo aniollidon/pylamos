@@ -17,11 +17,12 @@ router = APIRouter(prefix="/api", tags=["topics"])
 async def list_topics(
     class_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Topic).where(Topic.class_id == class_id).order_by(Topic.order_index)
-    )
+    stmt = select(Topic).where(Topic.class_id == class_id)
+    if current_user.role == UserRole.student:
+        stmt = stmt.where(Topic.is_hidden.is_(False))
+    result = await db.execute(stmt.order_by(Topic.order_index))
     return result.scalars().all()
 
 
@@ -32,7 +33,13 @@ async def create_topic(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_role(UserRole.teacher, UserRole.admin)),
 ):
-    topic = Topic(class_id=class_id, name=body.name, order_index=body.order_index)
+    topic = Topic(
+        class_id=class_id,
+        name=body.name,
+        order_index=body.order_index,
+        unlock_mode=body.unlock_mode,
+        is_hidden=body.is_hidden,
+    )
     db.add(topic)
     await db.flush()
     await db.refresh(topic)
@@ -43,11 +50,13 @@ async def create_topic(
 async def get_topic(
     topic_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     result = await db.execute(select(Topic).where(Topic.id == topic_id))
     topic = result.scalar_one_or_none()
     if not topic:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    if current_user.role == UserRole.student and topic.is_hidden:
         raise HTTPException(status_code=404, detail="Topic not found")
     return topic
 
@@ -63,12 +72,8 @@ async def update_topic(
     topic = result.scalar_one_or_none()
     if not topic:
         raise HTTPException(status_code=404, detail="Topic not found")
-    if body.name is not None:
-        topic.name = body.name
-    if body.order_index is not None:
-        topic.order_index = body.order_index
-    if body.unlock_mode is not None:
-        topic.unlock_mode = body.unlock_mode
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(topic, field, value)
     await db.flush()
     await db.refresh(topic)
     return topic
@@ -129,6 +134,8 @@ async def import_topic(
         class_id=class_id,
         name=source_topic.name,
         order_index=next_order,
+        unlock_mode=source_topic.unlock_mode,
+        is_hidden=source_topic.is_hidden,
     )
     db.add(new_topic)
     await db.flush()

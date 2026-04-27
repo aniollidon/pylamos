@@ -12,7 +12,7 @@ from app.schemas.submission import (
     SubmissionOverride, SaveCodeRequest, SubmissionVersionOut,
 )
 from app.utils.security import get_current_user, require_role
-from app.utils.topic_access import ensure_topic_access
+from app.utils.topic_access import ensure_exercise_access
 from app.utils.submission_utils import save_code_version
 
 router = APIRouter(prefix="/api", tags=["submissions"])
@@ -25,12 +25,7 @@ async def create_or_get_submission(
     current_user: User = Depends(get_current_user),
 ):
     """Get existing submission or create a new one."""
-    exercise_result = await db.execute(select(Exercise).where(Exercise.id == exercise_id))
-    exercise = exercise_result.scalar_one_or_none()
-    if not exercise:
-        raise HTTPException(status_code=404, detail="Exercise not found")
-
-    await ensure_topic_access(db, current_user, exercise.topic_id)
+    await ensure_exercise_access(db, current_user, exercise_id)
 
     result = await db.execute(
         select(Submission).where(
@@ -75,6 +70,7 @@ async def get_submission(
     # Students can only see their own
     if current_user.role == UserRole.student and submission.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
+    await ensure_exercise_access(db, current_user, submission.exercise_id)
     return submission
 
 
@@ -93,6 +89,7 @@ async def save_code(
         raise HTTPException(status_code=404, detail="Submission not found")
     if current_user.role == UserRole.student and submission.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
+    await ensure_exercise_access(db, current_user, submission.exercise_id)
 
     version = await save_code_version(db, submission_id, body.code)
     await db.refresh(version)

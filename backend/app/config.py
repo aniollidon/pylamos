@@ -9,7 +9,11 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    LLM_PROVIDER: str = "openai"
+    OPENAI_API_KEY: str = ""
+    OPENAI_MODEL: str = "gpt-4.1-mini"
     GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-2.0-flash"
     GEMINI_MAX_RETRIES: int = 3
     GEMINI_RETRY_INITIAL_DELAY_SECONDS: float = 1.0
     GEMINI_RETRY_BACKOFF_MULTIPLIER: float = 2.0

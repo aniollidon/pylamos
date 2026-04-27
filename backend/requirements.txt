@@ -10,6 +10,7 @@ passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
 python-multipart==0.0.20
 google-generativeai==0.8.4
+openai>=1.30.0
 httpx==0.28.1
 friendly-traceback>=0.7.6
 pytest==8.3.4

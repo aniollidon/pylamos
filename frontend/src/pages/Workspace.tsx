@@ -248,6 +248,45 @@ export default function Workspace() {
         messages: [...(prev.messages ?? []), optimisticMessage],
       };
     });
+    return optimisticMessage.id;
+  }
+
+  function removeMessageFromConversation(conversationId: number, messageId: number) {
+    setActiveConv((prev) => {
+      if (!prev || prev.id !== conversationId) return prev;
+      return {
+        ...prev,
+        messages: (prev.messages ?? []).filter((message) => message.id !== messageId),
+      };
+    });
+  }
+
+  function mergeConversationWithPendingMessages(serverConversation: Conversation, localConversation?: Conversation | null) {
+    const serverMessages = serverConversation.messages ?? [];
+    const pendingMessages = (localConversation?.messages ?? []).filter((message) => {
+      if (message.id >= 0) return false;
+
+      return !serverMessages.some((serverMessage) => {
+        if (serverMessage.role !== message.role || serverMessage.content !== message.content) {
+          return false;
+        }
+
+        const optimisticTimestamp = new Date(message.created_at).getTime();
+        const serverTimestamp = new Date(serverMessage.created_at).getTime();
+        return Math.abs(serverTimestamp - optimisticTimestamp) < 30000;
+      });
+    });
+
+    if (pendingMessages.length === 0) {
+      return serverConversation;
+    }
+
+    return {
+      ...serverConversation,
+      messages: [...serverMessages, ...pendingMessages].sort(
+        (left, right) => new Date(left.created_at).getTime() - new Date(right.created_at).getTime()
+      ),
+    };
   }
 
   async function refreshSubmissionStatus() {
@@ -258,11 +297,12 @@ export default function Workspace() {
 
   async function loadConversation(conv: Conversation) {
     const res = await api.get<Conversation>(`/api/conversations/${conv.id}`);
-    setActiveConv(res.data);
+    setActiveConv((prev) => mergeConversationWithPendingMessages(res.data, prev));
     setChatOpen(true);
     setIsComposingNewConversation(false);
-    upsertConversation(res.data);
-    return res.data;
+    const mergedConversation = mergeConversationWithPendingMessages(res.data, activeConv?.id === res.data.id ? activeConv : null);
+    upsertConversation(mergedConversation);
+    return mergedConversation;
   }
 
   const handleSave = async () => {
@@ -279,6 +319,7 @@ export default function Workspace() {
     setIsComposingNewConversation(false);
     setChatLoading(true);
     setChatInput('');
+    let optimisticMessageId: number | null = null;
 
     // Auto-save before sending a message
     if (submission && isDirty.current) {
@@ -294,7 +335,7 @@ export default function Workspace() {
       const execution = await resolveExecutionInfoForChat(code);
 
       if (loadedConversation) {
-        appendOptimisticUserMessage(loadedConversation.id, content);
+        optimisticMessageId = appendOptimisticUserMessage(loadedConversation.id, content);
       }
 
       await api.post<ChatMessage>(
@@ -307,6 +348,11 @@ export default function Workspace() {
       setActiveConv(convRes.data);
       upsertConversation(convRes.data);
       await refreshSubmissionStatus();
+    } catch (error) {
+      if (optimisticMessageId !== null) {
+        removeMessageFromConversation(targetConversation.id, optimisticMessageId);
+      }
+      throw error;
     } finally {
       setChatLoading(false);
     }
@@ -481,13 +527,15 @@ export default function Workspace() {
 
         setActiveConv((prev) => {
           if (!prev || prev.id !== convRes.data.id) return prev;
-          return convRes.data;
+          return mergeConversationWithPendingMessages(convRes.data, prev);
         });
 
         setConversations((prev) => {
+          const currentConversation = prev.find((c) => c.id === convRes.data.id) ?? null;
+          const mergedConversation = mergeConversationWithPendingMessages(convRes.data, currentConversation);
           const exists = prev.some((c) => c.id === convRes.data.id);
-          if (!exists) return [...prev, convRes.data];
-          return prev.map((c) => (c.id === convRes.data.id ? { ...c, ...convRes.data } : c));
+          if (!exists) return [...prev, mergedConversation];
+          return prev.map((c) => (c.id === convRes.data.id ? { ...c, ...mergedConversation } : c));
         });
       } catch {
         // Ignore transient polling errors and try again on next tick.

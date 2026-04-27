@@ -35,9 +35,10 @@ async def list_exercises(
     current_user: User = Depends(get_current_user),
 ):
     await ensure_topic_access(db, current_user, topic_id)
-    result = await db.execute(
-        select(Exercise).where(Exercise.topic_id == topic_id).order_by(Exercise.order_index)
-    )
+    stmt = select(Exercise).where(Exercise.topic_id == topic_id)
+    if current_user.role == UserRole.student:
+        stmt = stmt.where(Exercise.is_hidden.is_(False))
+    result = await db.execute(stmt.order_by(Exercise.order_index))
     return result.scalars().all()
 
 
@@ -56,6 +57,7 @@ async def create_exercise(
         solution=body.solution,
         system_prompt_override=body.system_prompt_override,
         order_index=next_order,
+        is_hidden=body.is_hidden,
     )
     db.add(exercise)
     await db.flush()
@@ -75,6 +77,8 @@ async def get_exercise(
         raise HTTPException(status_code=404, detail="Exercise not found")
 
     await ensure_topic_access(db, current_user, exercise.topic_id)
+    if current_user.role == UserRole.student and exercise.is_hidden:
+        raise HTTPException(status_code=404, detail="Exercise not found")
 
     # Teachers can see solution
     if current_user.role in (UserRole.teacher, UserRole.admin):
@@ -173,6 +177,7 @@ async def import_exercise(
         solution=source.solution,
         system_prompt_override=source.system_prompt_override,
         order_index=next_order,
+        is_hidden=source.is_hidden,
     )
     db.add(exercise)
     await db.flush()

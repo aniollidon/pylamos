@@ -16,24 +16,24 @@ from app.schemas.chat import (
     ConversationCreate, ConversationOut, ConversationDetailOut,
     MessageCreate, MessageOut, ExecutionInfo,
 )
-from app.services.llm_service import llm_service, ROLE_MAP
+from app.services.llm_service import llm_service, ROLE_MAP, format_message_for_llm
+from app.utils.teacher_policy import (
+    BOT_MENTION_RE,
+    apply_teacher_command_interpretation,
+    build_teacher_policy_prompt,
+    dump_teacher_command_interpretation,
+    dump_teacher_policy_state,
+    extract_teacher_command_text,
+    is_teacher_command,
+    load_teacher_policy_state,
+    should_include_message_in_llm_history,
+)
 from app.utils.prompt_builder import build_system_prompt
 from app.utils.security import get_current_user, require_role
+from app.utils.topic_access import ensure_exercise_access
 from app.utils.submission_utils import save_code_version
 
 router = APIRouter(prefix="/api", tags=["chat"])
-
-BOT_MENTION_RE = re.compile(r"(^|\s)/bot\b", re.IGNORECASE)
-TEACHER_DIRECTIVE_PROMPT = """
-[MODE_ORDRE_PROFESSOR]
-Estas en mode d'ordre directa del professor.
-
-Regles prioritaries:
-1) Si l'ultim missatge del professor dona una instruccio directa, segueix-la com a prioritat maxima.
-2) Mantingues el context de l'exercici, la conversa i el codi de l'alumne per respondre amb precisio.
-3) No ignoris la seguretat ni inventis dades, pero no desviis la resposta cap a altres objectius si el professor ha donat una ordre clara.
-4) Respon de manera clara i accionable segons la peticio del professor.
-""".strip()
 
 
 def _format_execution_info(execution: ExecutionInfo | None) -> str | None:
@@ -100,6 +100,18 @@ def _enforce_execution_guard(result: str | None, execution: ExecutionInfo | None
     return "correct" if _can_mark_resolved(execution) else "incorrect"
 
 
+def _build_effective_system_prompt(
+    base_prompt: str,
+    teacher_policy_state: str | None,
+    one_shot_instruction: str | None = None,
+) -> str:
+    policy_state = load_teacher_policy_state(teacher_policy_state)
+    teacher_overlay = build_teacher_policy_prompt(policy_state, one_shot_instruction)
+    if not teacher_overlay:
+        return base_prompt
+    return f"{base_prompt}\n\n{teacher_overlay}"
+
+
 @router.post("/submissions/{submission_id}/conversations", response_model=ConversationDetailOut)
 async def create_conversation(
     submission_id: int,
@@ -119,14 +131,14 @@ async def create_conversation(
     if current_user.role == UserRole.student and submission.chat_blocked:
         raise HTTPException(status_code=403, detail="Chat blocked")
 
-    ex_result = await db.execute(select(Exercise).where(Exercise.id == submission.exercise_id))
-    exercise = ex_result.scalar_one()
+    exercise = await ensure_exercise_access(db, current_user, submission.exercise_id)
 
     # Create conversation
     conv = ChatConversation(
         submission_id=submission_id,
         type=body.type,
         status=ConversationStatus.open,
+        teacher_policy_state=None,
     )
     db.add(conv)
     await db.flush()
@@ -168,6 +180,7 @@ async def create_conversation(
             system_prompt=system_prompt,
             history=[],
             user_message=initial_text,
+            user_message_role=MessageRole.user,
             code_snapshot=body.code,
             execution_info=_format_execution_info(body.execution),
         )
@@ -222,6 +235,13 @@ async def get_conversation(
     conv = result.scalar_one_or_none()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
+
+    sub_result = await db.execute(select(Submission).where(Submission.id == conv.submission_id))
+    submission = sub_result.scalar_one()
+    if current_user.role == UserRole.student and submission.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    await ensure_exercise_access(db, current_user, submission.exercise_id)
+
     return conv
 
 
@@ -229,8 +249,16 @@ async def get_conversation(
 async def list_conversations(
     submission_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
+    sub_result = await db.execute(select(Submission).where(Submission.id == submission_id))
+    submission = sub_result.scalar_one_or_none()
+    if not submission:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    if current_user.role == UserRole.student and submission.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    await ensure_exercise_access(db, current_user, submission.exercise_id)
+
     result = await db.execute(
         select(ChatConversation)
         .where(ChatConversation.submission_id == submission_id)
@@ -258,13 +286,17 @@ async def send_message(
     if conv.status == ConversationStatus.closed:
         raise HTTPException(status_code=400, detail="Conversation is closed")
 
+    sub_result = await db.execute(select(Submission).where(Submission.id == conv.submission_id))
+    submission = sub_result.scalar_one_or_none()
+    if not submission:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    if current_user.role == UserRole.student and submission.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    await ensure_exercise_access(db, current_user, submission.exercise_id)
+
     # Check chat_blocked for students
     if current_user.role == UserRole.student:
-        sub_blocked_check = await db.execute(
-            select(Submission).where(Submission.id == conv.submission_id)
-        )
-        sub_blocked = sub_blocked_check.scalar_one()
-        if sub_blocked.chat_blocked:
+        if submission.chat_blocked:
             raise HTTPException(status_code=403, detail="Chat blocked")
 
     # Determine role
@@ -302,6 +334,21 @@ async def send_message(
         await db.refresh(user_msg)
         return user_msg
 
+    teacher_command_one_shot: str | None = None
+    if msg_role == MessageRole.teacher and is_teacher_command(body.content):
+        current_policy_state = load_teacher_policy_state(conv.teacher_policy_state)
+        teacher_command = extract_teacher_command_text(body.content)
+        interpretation = await llm_service.interpret_teacher_command(
+            teacher_command=teacher_command,
+            current_policy_state=current_policy_state,
+        )
+        conv.teacher_policy_state = dump_teacher_policy_state(
+            apply_teacher_command_interpretation(current_policy_state, interpretation)
+        )
+        user_msg.teacher_command_meta = dump_teacher_command_interpretation(interpretation)
+        teacher_command_one_shot = interpretation.one_shot_instruction
+        await db.flush()
+
     # Build history for LLM
     system_prompt = ""
     history = []
@@ -309,10 +356,14 @@ async def send_message(
         if msg.role == MessageRole.system:
             system_prompt = msg.content
             continue
+        if not should_include_message_in_llm_history(
+            msg.role,
+            msg.content,
+            msg.teacher_command_meta,
+        ):
+            continue
         gemini_role = ROLE_MAP.get(msg.role, "user")
-        content = msg.content
-        if msg.role == MessageRole.teacher:
-            content = f"[PROFESSOR: {content}]"
+        content = format_message_for_llm(msg.content, msg.role)
         # Get code from version (preferred) or fallback to code_snapshot
         msg_code = None
         if msg.version:
@@ -331,10 +382,10 @@ async def send_message(
         else body.content
     )
 
-    llm_system_prompt = (
-        f"{system_prompt}\n\n{TEACHER_DIRECTIVE_PROMPT}"
-        if is_teacher_directive
-        else system_prompt
+    llm_system_prompt = _build_effective_system_prompt(
+        system_prompt,
+        conv.teacher_policy_state,
+        teacher_command_one_shot if is_teacher_directive else None,
     )
 
     # Call LLM
@@ -343,6 +394,7 @@ async def send_message(
             system_prompt=llm_system_prompt,
             history=history,
             user_message=new_content,
+            user_message_role=msg_role,
             code_snapshot=body.code,
             execution_info=_format_execution_info(body.execution),
         )

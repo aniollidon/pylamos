@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import String, Integer, ForeignKey, DateTime, func
+from sqlalchemy import String, Integer, ForeignKey, DateTime, func, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -14,6 +14,7 @@ class Topic(Base):
     name: Mapped[str] = mapped_column(String(200))
     order_index: Mapped[int] = mapped_column(Integer, default=0)
     unlock_mode: Mapped[str] = mapped_column(String(20), server_default="auto")
+    is_hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     # Relationships

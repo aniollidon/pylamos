@@ -188,6 +188,12 @@ export default function TeacherReview() {
 
   const currentCode = versions[selectedVersion]?.code ?? '';
   const studentName = studentFullName || sortedStudents[currentIndex]?.name || `#${userId}`;
+  const formatMessageSentTooltip = (isoDate: string) => {
+    const sentAt = new Date(isoDate);
+    const time = sentAt.toLocaleTimeString('ca', { hour: '2-digit', minute: '2-digit' });
+    const fullDate = sentAt.toLocaleString('ca');
+    return `Enviat a les ${time} (${fullDate})`;
+  };
 
   return (
     <div className="workspace" style={{ height: '100%' }}>
@@ -369,7 +375,11 @@ export default function TeacherReview() {
               </div>
             ) : (
               activeConv?.messages?.filter((m) => m.role !== 'system').map((msg) => (
-                <div key={msg.id} className={`chat-bubble ${msg.role}`}>
+                <div
+                  key={msg.id}
+                  className={`chat-bubble ${msg.role}`}
+                  title={formatMessageSentTooltip(msg.created_at)}
+                >
                   {msg.role === 'teacher' && <div className="chat-badge">[Professor]</div>}
                   {msg.role === 'assistant' && <div className="chat-badge">[🤖]</div>}
                   <MdRenderer>{msg.content}</MdRenderer>

@@ -39,6 +39,7 @@ class ChatConversation(Base):
     status: Mapped[ConversationStatus] = mapped_column(
         Enum(ConversationStatus), default=ConversationStatus.open
     )
+    teacher_policy_state: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     # Relationships
@@ -58,6 +59,7 @@ class ChatMessage(Base):
     content: Mapped[str] = mapped_column(Text)
     verdict: Mapped[MessageVerdict | None] = mapped_column(Enum(MessageVerdict), nullable=True)
     code_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
+    teacher_command_meta: Mapped[str | None] = mapped_column(Text, nullable=True)
     version_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("submission_versions.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 

@@ -22,9 +22,8 @@ async def get_class_progress(
     current_user: User = Depends(get_current_user),
 ):
     """Get progress for the current user (student) or all users (teacher) in a class."""
-    topics_result = await db.execute(
-        select(Topic).where(Topic.class_id == class_id).order_by(Topic.order_index)
-    )
+    topics_stmt = select(Topic).where(Topic.class_id == class_id, Topic.is_hidden.is_(False))
+    topics_result = await db.execute(topics_stmt.order_by(Topic.order_index))
     topics = topics_result.scalars().all()
 
     target_user_id = current_user.id
@@ -34,9 +33,8 @@ async def get_class_progress(
         unlocked = await _compute_unlock(db, topic, i, topics, target_user_id)
 
         # Get exercises status
-        exercises_result = await db.execute(
-            select(Exercise).where(Exercise.topic_id == topic.id).order_by(Exercise.order_index)
-        )
+        exercises_stmt = select(Exercise).where(Exercise.topic_id == topic.id, Exercise.is_hidden.is_(False))
+        exercises_result = await db.execute(exercises_stmt.order_by(Exercise.order_index))
         exercises = exercises_result.scalars().all()
 
         exercise_progress = []
@@ -126,7 +124,7 @@ async def _compute_unlock(db: AsyncSession, topic: Topic, i: int, topics: list, 
 
 async def _all_topic_items_completed(db: AsyncSession, topic_id: int, user_id: int) -> bool:
     exercises_result = await db.execute(
-        select(Exercise.id).where(Exercise.topic_id == topic_id)
+        select(Exercise.id).where(Exercise.topic_id == topic_id, Exercise.is_hidden.is_(False))
     )
     exercise_ids = [row[0] for row in exercises_result.all()]
     for eid in exercise_ids:
