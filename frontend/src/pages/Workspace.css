@@ -62,6 +62,7 @@
 
 .workspace-toolbar .toolbar-right {
   display: flex;
+  align-items: center;
   gap: 6px;
 }
 
@@ -145,6 +146,7 @@
 
 .editor-actions {
   display: flex;
+  align-items: center;
   gap: 6px;
 }
 
@@ -190,6 +192,376 @@
 .editor-area {
   height: 308px;
   min-height: 308px;
+}
+
+.debug-panel {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
+    var(--bg-secondary);
+}
+
+.debug-header {
+  gap: 12px;
+}
+
+.debug-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.debug-status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-bright);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.debug-status-pill.paused {
+  background: rgba(255, 196, 61, 0.18);
+  color: #ffd166;
+}
+
+.debug-status-pill.finished {
+  background: rgba(80, 200, 120, 0.18);
+  color: #87e7a7;
+}
+
+.debug-status-pill.stdin_needed {
+  background: rgba(100, 181, 246, 0.18);
+  color: #9dd4ff;
+}
+
+.debug-status-pill.error {
+  background: rgba(244, 67, 54, 0.18);
+  color: #ff9b91;
+}
+
+.debug-breakpoint-count {
+  color: var(--text-secondary);
+  font-size: 11px;
+  display: none;
+}
+
+.debug-btn {
+  min-height: 26px;
+  font-size: 12px;
+}
+
+.debug-step-controls,
+.run-mode-controls {
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.debug-step-controls {
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.run-mode-controls {
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.debug-step-controls .debug-btn,
+.run-mode-controls .btn-primary {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.debug-step-controls .debug-btn {
+  height: 30px;
+  min-height: 30px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  line-height: 1;
+}
+
+.debug-step-controls .btn-warning {
+  color: #1e1e1e;
+}
+
+.run-mode-controls .btn-primary {
+  height: 30px;
+  min-height: 30px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  line-height: 1;
+}
+
+.debug-step-controls .action-menu,
+.run-mode-controls .action-menu {
+  position: relative;
+}
+
+.debug-step-controls .action-menu-trigger,
+.run-mode-controls .action-menu-trigger {
+  min-width: 30px;
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border-color);
+  border-left: 0;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.run-mode-controls .action-menu-trigger {
+  height: 30px;
+  min-width: 34px;
+  min-height: 30px;
+  padding: 0 10px;
+  background: var(--accent-blue);
+  color: #fff;
+  border: 0;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.22);
+}
+
+.debug-step-controls .action-menu-trigger {
+  height: 30px;
+  min-width: 34px;
+  min-height: 30px;
+  padding: 0 10px;
+  background: var(--warning);
+  color: #1e1e1e;
+  border: 0;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.22);
+}
+
+.debug-step-controls .action-menu-trigger:hover:not(:disabled),
+.run-mode-controls .action-menu-trigger:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.debug-step-controls .action-menu-trigger:hover:not(:disabled) {
+  background: #ddb400;
+}
+
+.run-mode-controls .action-menu-trigger:hover:not(:disabled) {
+  background: var(--accent-blue-hover);
+}
+
+.debug-step-controls .action-menu-popover,
+.run-mode-controls .action-menu-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 140px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  z-index: 60;
+  overflow: hidden;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.38);
+}
+
+.debug-step-controls .action-menu-item,
+.run-mode-controls .action-menu-item {
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 0;
+}
+
+.run-mode-controls .action-menu-item {
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.run-mode-controls .action-menu-item-icon {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #8bc9ff;
+  flex: 0 0 auto;
+}
+
+.run-mode-controls .action-menu-item-icon svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.run-mode-controls .action-menu-item-label {
+  text-align: left;
+}
+
+.debug-step-controls .action-menu-item:hover,
+.run-mode-controls .action-menu-item:hover {
+  background: var(--bg-hover);
+}
+
+.debug-body {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(280px, 1.1fr);
+  gap: 12px;
+  padding: 12px;
+}
+
+.debug-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 160px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(11, 13, 17, 0.55);
+}
+
+.debug-pane-title {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.debug-pane-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.debug-stack-frame {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-bright);
+  cursor: pointer;
+  text-align: left;
+}
+
+.debug-stack-frame:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.debug-stack-frame.active {
+  border-color: rgba(255, 209, 102, 0.45);
+  background: rgba(255, 209, 102, 0.08);
+}
+
+.debug-stack-frame-name {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.debug-stack-frame-line {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.debug-variable-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 120px) minmax(90px, 120px) 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.debug-variable-name {
+  color: #ffd166;
+  word-break: break-word;
+}
+
+.debug-variable-type {
+  color: #8fd3ff;
+  word-break: break-word;
+}
+
+.debug-variable-value {
+  color: #dfe7ef;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.debug-empty {
+  color: var(--text-secondary);
+  font-size: 13px;
+  padding: 10px;
+}
+
+.debug-error-banner {
+  padding: 10px 12px;
+  border-top: 1px solid rgba(244, 67, 54, 0.18);
+  background: rgba(244, 67, 54, 0.08);
+  color: #ffaea5;
+  font-size: 13px;
+}
+
+.debug-breakpoint-glyph {
+  background: radial-gradient(circle at center, #ff6b6b 0 42%, transparent 43%);
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.debug-breakpoint-line {
+  margin-left: 4px;
+  width: 3px !important;
+  background: rgba(255, 107, 107, 0.9);
+}
+
+.debug-current-line {
+  background: rgba(255, 209, 102, 0.12);
+  border: 1px solid rgba(255, 209, 102, 0.18);
+  box-sizing: border-box;
+}
+
+@media (max-width: 1100px) {
+  .debug-body {
+    grid-template-columns: 1fr;
+  }
 }
 
 .console-panel {

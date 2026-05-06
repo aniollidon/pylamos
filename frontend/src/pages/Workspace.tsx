@@ -1,13 +1,56 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import Editor from '@monaco-editor/react';
+import Editor, { type OnMount } from '@monaco-editor/react';
+import ActionMenu from '../components/ActionMenu';
 import MdRenderer from '../components/MdRenderer';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
-import { useBrython, type ConsoleEntry, type RunResult } from '../hooks/useBrython';
+import {
+  useBrython,
+  type ConsoleEntry,
+  type DebugCommand,
+  type DebugFrame,
+  type DebugRunResult,
+  type DebugSnapshot,
+  type RunResult,
+} from '../hooks/useBrython';
 import type { Exercise, Submission, Conversation, ChatMessage, CodeExecutionInfo } from '../types';
 import './Workspace.css';
+
+const DEFAULT_CODE = '# Escriu el teu codi aquí\n';
+
+type ExecutionMode = 'run' | 'debug' | null;
+
+type DebugSessionState = {
+  status: 'idle' | 'running' | 'paused' | 'stdin_needed' | 'finished' | 'error';
+  seed: number | null;
+  code: string;
+  breakpoints: number[];
+  history: DebugCommand[];
+  snapshot: DebugSnapshot | null;
+  errorMessage: string | null;
+};
+
+type MonacoEditorLike = Parameters<OnMount>[0];
+type MonacoNamespaceLike = Parameters<OnMount>[1];
+type MonacoMouseEventLike = Parameters<Parameters<MonacoEditorLike['onMouseDown']>[0]>[0];
+type MonacoDisposableLike = { dispose: () => void };
+type MonacoHoverProviderLike = Parameters<MonacoNamespaceLike['languages']['registerHoverProvider']>[1];
+type MonacoHoverModelLike = Parameters<NonNullable<MonacoHoverProviderLike['provideHover']>>[0];
+type MonacoHoverPositionLike = Parameters<NonNullable<MonacoHoverProviderLike['provideHover']>>[1];
+
+function createInitialDebugSession(code: string): DebugSessionState {
+  return {
+    status: 'idle',
+    seed: null,
+    code,
+    breakpoints: [],
+    history: [],
+    snapshot: null,
+    errorMessage: null,
+  };
+}
 
 export default function Workspace() {
   const MARKER_CORRECT = '[EXERCICI_CORRECTE]';
@@ -39,12 +82,13 @@ export default function Workspace() {
   const [submission, setSubmission] = useState<Submission | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [code, setCode] = useState('# Escriu el teu codi aquí\n');
+  const [code, setCode] = useState(DEFAULT_CODE);
   const [consoleOutput, setConsoleOutput] = useState<ConsoleEntry[]>([]);
   const [terminalInput, setTerminalInput] = useState('');
   const [collectedInputs, setCollectedInputs] = useState<string[]>([]);
   const [isWaitingForInput, setIsWaitingForInput] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const [activeExecutionMode, setActiveExecutionMode] = useState<ExecutionMode>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConv, setActiveConv] = useState<Conversation | null>(null);
@@ -55,9 +99,11 @@ export default function Workspace() {
   const [showSuccessBanner, setShowSuccessBanner] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [debugSession, setDebugSession] = useState<DebugSessionState>(() => createInitialDebugSession(DEFAULT_CODE));
+  const [selectedDebugFrameId, setSelectedDebugFrameId] = useState<string | null>(null);
   const pendingNavigationRef = useRef<string | null>(null);
 
-  const { run: runBrython } = useBrython();
+  const { run: runBrython, debugReplay } = useBrython();
 
   const savedCodeRef = useRef<string>('');
   const isDirty = useRef(false);
@@ -73,9 +119,47 @@ export default function Workspace() {
   const consolePanelRef = useRef<HTMLDivElement>(null);
   const consoleOutputRef = useRef<HTMLDivElement>(null);
   const terminalInputRef = useRef<HTMLInputElement>(null);
+  const editorAreaRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<MonacoEditorLike | null>(null);
+  const monacoRef = useRef<MonacoNamespaceLike | null>(null);
+  const debugHoverProviderRef = useRef<MonacoDisposableLike | null>(null);
+  const breakpointDecorationIdsRef = useRef<string[]>([]);
+  const currentLineDecorationIdsRef = useRef<string[]>([]);
+  const debugStatusRef = useRef<DebugSessionState['status']>('idle');
+  const currentDebugFrameRef = useRef<DebugFrame | null>(null);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout>>();
   const confettiTimer = useRef<ReturnType<typeof setTimeout>>();
   const successBannerTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  const currentDebugFrame: DebugFrame | null = debugSession.snapshot?.frames.find((frame) => frame.id === selectedDebugFrameId)
+    ?? debugSession.snapshot?.frames[0]
+    ?? null;
+  const isDebugSessionVisible = debugSession.status !== 'idle';
+  const showDebugPanel = debugSession.status !== 'idle';
+  const canAdvanceDebug = debugSession.status === 'paused';
+  const showExecutionStop = isRunning || isDebugSessionVisible;
+  const executionStopLabel = debugSession.status === 'finished' ? t('hide') : t('stop');
+  const debugMenuIcon = (
+    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <path
+        fill="currentColor"
+        d="M4.355.522a.5.5 0 0 1 .623.333l.291.956A5 5 0 0 1 8 1c1.007 0 1.946.298 2.731.811l.29-.956a.5.5 0 1 1 .957.29l-.41 1.352A5 5 0 0 1 13 6h.5a.5.5 0 0 0 .5-.5V5a.5.5 0 0 1 1 0v.5A1.5 1.5 0 0 1 13.5 7H13v1h1.5a.5.5 0 0 1 0 1H13v1h.5a1.5 1.5 0 0 1 1.5 1.5v.5a.5.5 0 1 1-1 0v-.5a.5.5 0 0 0-.5-.5H13a5 5 0 0 1-10 0h-.5a.5.5 0 0 0-.5.5v.5a.5.5 0 1 1-1 0v-.5A1.5 1.5 0 0 1 2.5 10H3V9H1.5a.5.5 0 0 1 0-1H3V7h-.5A1.5 1.5 0 0 1 1 5.5V5a.5.5 0 0 1 1 0v.5a.5.5 0 0 0 .5.5H3c0-1.364.547-2.601 1.432-3.503l-.41-1.352a.5.5 0 0 1 .333-.623M4 7v4a4 4 0 0 0 3.5 3.97V7zm4.5 0v7.97A4 4 0 0 0 12 11V7zM12 6a4 4 0 0 0-1.334-2.982A3.98 3.98 0 0 0 8 2a3.98 3.98 0 0 0-2.667 1.018A4 4 0 0 0 4 6z"
+      />
+    </svg>
+  );
+  const executionModeMenuItems = [
+    {
+      label: debugSession.status === 'idle' ? t('start_debug') : t('restart_debug'),
+      icon: debugMenuIcon,
+      onClick: () => void handleStartDebug(),
+    },
+  ];
+  const debugStepMenuItems = [
+    { label: t('continue'), onClick: () => queueDebugCommand('continue') },
+    { label: t('step_into'), onClick: () => queueDebugCommand('step_into') },
+    { label: t('step_over'), onClick: () => queueDebugCommand('step_over') },
+    { label: t('step_out'), onClick: () => queueDebugCommand('step_out') },
+  ];
 
   const suggestionPrompts = [
     { type: 'help' as const, text: t('suggest_help') },
@@ -96,11 +180,57 @@ export default function Workspace() {
     if (result.status === 'stdin_needed') {
       setIsWaitingForInput(true);
       setIsRunning(true);
+      setActiveExecutionMode('run');
     } else {
       setIsWaitingForInput(false);
       setIsRunning(false);
+      setActiveExecutionMode(null);
     }
   }, []);
+
+  const applyDebugResult = useCallback(
+    (
+      headerText: string,
+      result: DebugRunResult,
+      nextCode: string,
+      nextSeed: number,
+      nextHistory: DebugCommand[]
+    ) => {
+      setConsoleOutput([{ type: 'info', text: headerText }, ...result.entries]);
+
+      if (result.status === 'stdin_needed') {
+        setIsWaitingForInput(true);
+        setIsRunning(true);
+        setActiveExecutionMode('debug');
+        setDebugSession((prev) => ({
+          ...prev,
+          status: 'stdin_needed',
+          seed: nextSeed,
+          code: nextCode,
+          history: nextHistory,
+          snapshot: result.snapshot ?? prev.snapshot,
+          errorMessage: null,
+        }));
+        return;
+      }
+
+      setIsWaitingForInput(false);
+      setIsRunning(false);
+      setActiveExecutionMode(null);
+      setDebugSession((prev) => ({
+        ...prev,
+        status: result.status === 'paused' ? 'paused' : result.status === 'finished' ? 'finished' : 'error',
+        seed: nextSeed,
+        code: nextCode,
+        history: nextHistory,
+        snapshot: result.snapshot ?? null,
+        errorMessage: result.status === 'error'
+          ? result.entries.find((entry) => entry.type === 'error')?.text.trim() ?? null
+          : null,
+      }));
+    },
+    []
+  );
 
   function extractErrorLine(text: string) {
     const match = text.match(/línia\s+(\d+)/i);
@@ -118,7 +248,24 @@ export default function Workspace() {
     return match?.[1];
   }
 
-  function buildExecutionInfoFromResult(result: RunResult): CodeExecutionInfo {
+  function getDebugStatusLabel(status: DebugSessionState['status']) {
+    switch (status) {
+      case 'running':
+        return t('loading');
+      case 'paused':
+        return t('paused');
+      case 'stdin_needed':
+        return t('waiting_input');
+      case 'finished':
+        return t('finished');
+      case 'error':
+        return t('debug_error');
+      default:
+        return t('debug_ready');
+    }
+  }
+
+  const buildExecutionInfoFromResult = useCallback((result: RunResult): CodeExecutionInfo => {
     if (result.status === 'stdin_needed') {
       return {
         status: 'stdin_needed',
@@ -152,7 +299,7 @@ export default function Workspace() {
       error_type: errorType,
       error_message: errorMessage,
     };
-  }
+  }, []);
 
   async function diagnoseExecutionInfo(currentCode: string): Promise<CodeExecutionInfo> {
     type DiagnoseResult = {
@@ -183,6 +330,132 @@ export default function Workspace() {
     };
   }
 
+  const toggleBreakpoint = useCallback((lineNumber: number) => {
+    setDebugSession((prev) => {
+      const alreadySet = prev.breakpoints.includes(lineNumber);
+      const breakpoints = alreadySet
+        ? prev.breakpoints.filter((line) => line !== lineNumber)
+        : [...prev.breakpoints, lineNumber].sort((left, right) => left - right);
+      return {
+        ...prev,
+        breakpoints,
+      };
+    });
+  }, []);
+
+  const handleEditorMount = useCallback((editorInstance: MonacoEditorLike, monacoInstance: MonacoNamespaceLike) => {
+    editorRef.current = editorInstance;
+    monacoRef.current = monacoInstance;
+    debugHoverProviderRef.current?.dispose();
+    debugHoverProviderRef.current = monacoInstance.languages.registerHoverProvider('python', {
+      provideHover(model: MonacoHoverModelLike, position: MonacoHoverPositionLike) {
+        if (debugStatusRef.current !== 'paused') return null;
+
+        const currentFrame = currentDebugFrameRef.current;
+        if (!currentFrame) return null;
+
+        const word = model.getWordAtPosition(position);
+        if (!word) return null;
+
+        const variable = currentFrame.locals.find((item) => item.name === word.word);
+        if (!variable) return null;
+
+        const escapedName = variable.name.replace(/([*_`\\])/g, '\\$1');
+        const escapedType = variable.type.replace(/([*_`\\])/g, '\\$1');
+        const escapedValue = variable.value.replace(/([*_`\\])/g, '\\$1');
+
+        return {
+          range: new monacoInstance.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn),
+          contents: [
+            { value: `**${escapedName}**` },
+            { value: `Type: \`${escapedType}\`` },
+            { value: `Value: \`${escapedValue}\`` },
+          ],
+        };
+      },
+    });
+    editorInstance.onMouseDown((event: MonacoMouseEventLike) => {
+      const mouseTargetType = monacoInstance.editor.MouseTargetType;
+      const lineNumber = event.target.position?.lineNumber;
+      if (!lineNumber) return;
+      if (
+        event.target.type === mouseTargetType.GUTTER_GLYPH_MARGIN
+        || event.target.type === mouseTargetType.GUTTER_LINE_NUMBERS
+      ) {
+        toggleBreakpoint(lineNumber);
+      }
+    });
+  }, [toggleBreakpoint]);
+
+  const executeDebugHistory = useCallback(async (nextHistory: DebugCommand[], nextSeed: number, nextInputs: string[]) => {
+    const filename = exercise
+      ? exercise.title.toLowerCase().replace(/\s+/g, '_').replace(/[^\w]/g, '') + '.py'
+      : 'exercici.py';
+    const isFreshSession = nextHistory.length === 1 || debugSession.code !== code || debugSession.seed == null;
+    const latestCommand = nextHistory[nextHistory.length - 1]?.kind;
+    const shouldClearSnapshotWhileRunning = latestCommand === 'continue';
+
+    editorAreaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (submission && isFreshSession) {
+      await api.post(`/api/submissions/${submission.id}/save`, { code });
+      savedCodeRef.current = code;
+      isDirty.current = false;
+    }
+
+    runningCodeRef.current = code;
+    runningFilenameRef.current = filename;
+    runSeedRef.current = nextSeed;
+    setCollectedInputs(nextInputs);
+    setTerminalInput('');
+    setIsWaitingForInput(false);
+    setIsRunning(true);
+    setActiveExecutionMode('debug');
+    setDebugSession((prev) => ({
+      ...prev,
+      status: 'running',
+      seed: nextSeed,
+      code,
+      history: nextHistory,
+      snapshot: shouldClearSnapshotWhileRunning ? null : prev.snapshot,
+      errorMessage: null,
+    }));
+
+    if (shouldClearSnapshotWhileRunning) {
+      setSelectedDebugFrameId(null);
+      if (editorRef.current) {
+        currentLineDecorationIdsRef.current = editorRef.current.deltaDecorations(
+          currentLineDecorationIdsRef.current,
+          []
+        );
+      }
+    }
+
+    const result = debugReplay(code, nextInputs, nextSeed, debugSession.breakpoints, nextHistory);
+    const headerText = latestCommand
+      ? `$ debug ${filename} :: ${latestCommand}\n`
+      : `$ debug ${filename}\n`;
+    applyDebugResult(headerText, result, code, nextSeed, nextHistory);
+  }, [applyDebugResult, code, debugReplay, debugSession.breakpoints, debugSession.code, debugSession.seed, exercise, submission]);
+
+  const handleStartDebug = useCallback(async () => {
+    const seed = Math.floor(Math.random() * 2 ** 31);
+    setSelectedDebugFrameId(null);
+    await executeDebugHistory([{ kind: 'start' }], seed, []);
+  }, [executeDebugHistory]);
+
+  const queueDebugCommand = useCallback((kind: DebugCommand['kind']) => {
+    if (debugSession.seed == null) return;
+    const topFrame = debugSession.snapshot?.frames[0] ?? null;
+    const nextCommand: DebugCommand = ['step', 'step_into', 'step_over', 'step_out'].includes(kind)
+      ? {
+          kind,
+          originFrameId: topFrame?.id ?? null,
+          originLine: debugSession.snapshot?.line ?? null,
+        }
+      : { kind };
+    void executeDebugHistory([...debugSession.history, nextCommand], debugSession.seed, collectedInputs);
+  }, [collectedInputs, debugSession.history, debugSession.seed, debugSession.snapshot, executeDebugHistory]);
+
   async function resolveExecutionInfoForChat(currentCode: string): Promise<CodeExecutionInfo> {
     if (latestExecutionCodeRef.current === currentCode && latestExecutionInfoRef.current) {
       return latestExecutionInfoRef.current;
@@ -202,13 +475,13 @@ export default function Workspace() {
     return [...items].reverse().find((conv) => conv.type === type && conv.status !== 'closed') ?? null;
   }
 
-  function upsertConversation(conv: Conversation) {
+  const upsertConversation = useCallback((conv: Conversation) => {
     setConversations((prev) => {
       const next = [...prev.filter((item) => item.id !== conv.id), conv];
       next.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
       return next;
     });
-  }
+  }, []);
 
   function shouldRenderMessage(msg: ChatMessage) {
     return msg.role !== 'system' && stripResultMarkers(msg.content).length > 0;
@@ -297,7 +570,7 @@ export default function Workspace() {
     setSubmission(subRes.data);
   }
 
-  async function loadConversation(conv: Conversation) {
+  const loadConversation = useCallback(async (conv: Conversation) => {
     const res = await api.get<Conversation>(`/api/conversations/${conv.id}`);
     setActiveConv((prev) => mergeConversationWithPendingMessages(res.data, prev));
     setChatOpen(true);
@@ -305,7 +578,7 @@ export default function Workspace() {
     const mergedConversation = mergeConversationWithPendingMessages(res.data, activeConv?.id === res.data.id ? activeConv : null);
     upsertConversation(mergedConversation);
     return mergedConversation;
-  }
+  }, [activeConv, upsertConversation]);
 
   const handleSave = async () => {
     if (!submission) return;
@@ -469,6 +742,22 @@ export default function Workspace() {
   }, [code]);
 
   useEffect(() => {
+    setDebugSession((prev) => {
+      if (prev.code === code) return prev;
+      return {
+        ...prev,
+        status: 'idle',
+        seed: null,
+        code,
+        history: [],
+        snapshot: null,
+        errorMessage: null,
+      };
+    });
+    setSelectedDebugFrameId(null);
+  }, [code]);
+
+  useEffect(() => {
     if (!submission) return;
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
     autoSaveTimer.current = setTimeout(() => {
@@ -524,6 +813,82 @@ export default function Workspace() {
   }, [isWaitingForInput]);
 
   useEffect(() => {
+    debugStatusRef.current = debugSession.status;
+    currentDebugFrameRef.current = currentDebugFrame;
+  }, [currentDebugFrame, debugSession.status]);
+
+  useEffect(() => {
+    return () => {
+      debugHoverProviderRef.current?.dispose();
+      debugHoverProviderRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const frames = debugSession.snapshot?.frames ?? [];
+    setSelectedDebugFrameId((prev) => {
+      if (frames.length === 0) return null;
+      return frames.some((frame) => frame.id === prev) ? prev : frames[0].id;
+    });
+  }, [debugSession.snapshot]);
+
+  useEffect(() => {
+    if (!debugSession.snapshot) return;
+    console.log('[pylamos debugger stack]', {
+      status: debugSession.status,
+      event: debugSession.snapshot.event,
+      line: debugSession.snapshot.line,
+      frames: debugSession.snapshot.frames.map((frame) => ({
+        id: frame.id,
+        name: frame.name,
+        file: frame.file,
+        line: frame.line,
+        locals: frame.locals,
+      })),
+      raw: debugSession.snapshot,
+    });
+  }, [debugSession.snapshot, debugSession.status]);
+
+  useEffect(() => {
+    const editorInstance = editorRef.current;
+    const monacoInstance = monacoRef.current;
+    if (!editorInstance || !monacoInstance) return;
+
+    breakpointDecorationIdsRef.current = editorInstance.deltaDecorations(
+      breakpointDecorationIdsRef.current,
+      debugSession.breakpoints.map((lineNumber) => ({
+        range: new monacoInstance.Range(lineNumber, 1, lineNumber, 1),
+        options: {
+          isWholeLine: true,
+          glyphMarginClassName: 'debug-breakpoint-glyph',
+          linesDecorationsClassName: 'debug-breakpoint-line',
+        },
+      }))
+    );
+
+    const currentLine = debugSession.status === 'paused'
+      ? debugSession.snapshot?.line
+      : null;
+    currentLineDecorationIdsRef.current = editorInstance.deltaDecorations(
+      currentLineDecorationIdsRef.current,
+      currentLine
+        ? [{
+            range: new monacoInstance.Range(currentLine, 1, currentLine, 1),
+            options: {
+              isWholeLine: true,
+              className: 'debug-current-line',
+            },
+          }]
+        : []
+    );
+
+    if (currentLine) {
+      editorAreaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      editorInstance.revealLineInCenter(currentLine);
+    }
+  }, [debugSession.breakpoints, debugSession.snapshot, debugSession.status]);
+
+  useEffect(() => {
     if (!chatOpen || isComposingNewConversation || !activeConv?.id) return;
 
     let cancelled = false;
@@ -572,17 +937,48 @@ export default function Workspace() {
     }
 
     void loadConversation(latestOpen);
-  }, [chatOpen, isComposingNewConversation, activeConv, conversations]);
+  }, [chatOpen, isComposingNewConversation, activeConv, conversations, loadConversation]);
 
   const handleStop = useCallback(() => {
+    if (activeExecutionMode === 'debug' || debugSession.status !== 'idle') {
+      const debugClosedMessage = debugSession.status === 'finished'
+        ? '(depuració amagada)\n'
+        : '(depuració aturada)\n';
+      setDebugSession((prev) => ({
+        ...prev,
+        status: 'idle',
+        seed: null,
+        history: [],
+        snapshot: null,
+        errorMessage: null,
+      }));
+      setSelectedDebugFrameId(null);
+      setActiveExecutionMode(null);
+      setIsRunning(false);
+      setIsWaitingForInput(false);
+      setTerminalInput('');
+      setConsoleOutput((prev) => [...prev, { type: 'info', text: debugClosedMessage }]);
+      return;
+    }
+
+    setActiveExecutionMode(null);
     setIsRunning(false);
     setIsWaitingForInput(false);
     setTerminalInput('');
     setConsoleOutput((prev) => [...prev, { type: 'info', text: '(execució aturada)\n' }]);
-  }, []);
+  }, [activeExecutionMode, debugSession.status]);
 
   const handleRun = useCallback(async () => {
     setIsRunning(true);
+    setDebugSession((prev) => ({
+      ...prev,
+      status: 'idle',
+      seed: null,
+      history: [],
+      snapshot: null,
+      errorMessage: null,
+    }));
+    setSelectedDebugFrameId(null);
     const filename = exercise
       ? exercise.title.toLowerCase().replace(/\s+/g, '_').replace(/[^\w]/g, '') + '.py'
       : 'exercici.py';
@@ -645,20 +1041,27 @@ export default function Workspace() {
         // error de xarxa o backend no disponible — ignorar silenciosament
       }
     }
-  }, [code, exercise, submission, runBrython, applyResult]);
+  }, [code, exercise, submission, runBrython, applyResult, buildExecutionInfoFromResult]);
 
-  const handleTerminalSubmit = useCallback(() => {
+  const handleTerminalSubmit = useCallback(async () => {
     if (!isWaitingForInput) return;
     consolePanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     const value = terminalInput;
     setTerminalInput('');
     const newInputs = [...collectedInputs, value];
     setCollectedInputs(newInputs);
+
+    if (activeExecutionMode === 'debug') {
+      if (debugSession.seed == null) return;
+      await executeDebugHistory(debugSession.history, debugSession.seed, newInputs);
+      return;
+    }
+
     const result = runBrython(runningCodeRef.current, newInputs, runSeedRef.current);
     applyResult({ text: `$ python ${runningFilenameRef.current}\n`, type: 'info' }, result);
     latestExecutionCodeRef.current = runningCodeRef.current;
     latestExecutionInfoRef.current = buildExecutionInfoFromResult(result);
-  }, [isWaitingForInput, terminalInput, collectedInputs, runBrython, applyResult]);
+  }, [activeExecutionMode, applyResult, buildExecutionInfoFromResult, collectedInputs, debugSession.history, debugSession.seed, executeDebugHistory, isWaitingForInput, runBrython, terminalInput]);
 
   const handleEvaluate = async () => {
     await startOrReuseConversation('evaluate', t('suggest_reevaluate'));
@@ -730,10 +1133,14 @@ export default function Workspace() {
               {saving ? '...' : t('save')}
             </button>
           )}
-          {isRunning
-            ? <button className="btn-danger" onClick={handleStop}>⏹ {t('stop')}</button>
-            : <button className="btn-primary" onClick={() => void handleRun()}>▶ {t('run')}</button>
-          }
+          {showExecutionStop ? (
+            <button className="btn-danger" onClick={handleStop}>⏹ {executionStopLabel}</button>
+          ) : (
+            <div className="run-mode-controls">
+              <button className="btn-primary" onClick={() => void handleRun()}>▶ {t('run')}</button>
+              <ActionMenu items={executionModeMenuItems} title={t('start_debug')} />
+            </div>
+          )}
           {!isCompleted && (
             <button className="btn-success" onClick={() => void handleEvaluate()} disabled={chatLoading || isChatBlocked}>
               {t('evaluate')}
@@ -761,23 +1168,29 @@ export default function Workspace() {
           <div className="panel-header editor-header">
             <span>Editor</span>
             <div className="editor-actions">
-              {isRunning
-                ? <button className="btn-danger" onClick={handleStop}>⏹ {t('stop')}</button>
-                : <button className="btn-primary" onClick={() => void handleRun()}>▶ {t('run')}</button>
-              }
+              {showExecutionStop ? (
+                <button className="btn-danger" onClick={handleStop}>⏹ {executionStopLabel}</button>
+              ) : (
+                <div className="run-mode-controls">
+                  <button className="btn-primary" onClick={() => void handleRun()}>▶ {t('run')}</button>
+                  <ActionMenu items={executionModeMenuItems} title={t('start_debug')} />
+                </div>
+              )}
             </div>
           </div>
-          <div className="editor-area">
+          <div ref={editorAreaRef} className="editor-area">
             <Editor
               height="100%"
               defaultLanguage="python"
               theme="vs-dark"
               value={code}
               onChange={(val) => setCode(val ?? '')}
+              onMount={handleEditorMount}
               options={{
                 fontSize: 14,
                 fontFamily: "'Cascadia Code', 'Fira Code', Consolas, monospace",
                 minimap: { enabled: false },
+                glyphMargin: true,
                 lineNumbers: 'on',
                 scrollBeyondLastLine: false,
                 automaticLayout: true,
@@ -786,6 +1199,65 @@ export default function Workspace() {
               }}
             />
           </div>
+
+          {showDebugPanel && (
+            <div className="debug-panel">
+              <div className="panel-header debug-header">
+                <span>{t('debugger')}</span>
+                <div className="debug-header-actions">
+                  <span className={`debug-status-pill ${debugSession.status}`}>{getDebugStatusLabel(debugSession.status)}</span>
+                  <span className="debug-breakpoint-count">{t('breakpoints')}: {debugSession.breakpoints.length}</span>
+                  <div className="debug-step-controls">
+                    <button className="btn-warning debug-btn" onClick={() => queueDebugCommand('step_into')} disabled={!canAdvanceDebug}>
+                      {t('step')}
+                    </button>
+                    <ActionMenu items={debugStepMenuItems} disabled={!canAdvanceDebug} />
+                  </div>
+                  <button className="btn-danger debug-btn" onClick={handleStop} disabled={debugSession.status === 'idle'}>
+                    {debugSession.status === 'finished' ? t('hide') : t('stop')}
+                  </button>
+                </div>
+              </div>
+              <div className="debug-body">
+                <div className="debug-pane">
+                  <div className="debug-pane-title">{t('call_stack')}</div>
+                  <div className="debug-pane-content">
+                    {debugSession.snapshot?.frames.length
+                      ? debugSession.snapshot.frames.map((frame) => (
+                          <button
+                            key={frame.id}
+                            className={`debug-stack-frame ${frame.id === currentDebugFrame?.id ? 'active' : ''}`}
+                            onClick={() => setSelectedDebugFrameId(frame.id)}
+                          >
+                            <span className="debug-stack-frame-name">{frame.name}</span>
+                            <span className="debug-stack-frame-line">{frame.file}:{frame.line}</span>
+                          </button>
+                        ))
+                      : <div className="debug-empty">{t('no_stack_frames')}</div>
+                    }
+                  </div>
+                </div>
+                <div className="debug-pane">
+                  <div className="debug-pane-title">{t('variables')}</div>
+                  <div className="debug-pane-content">
+                    {currentDebugFrame?.locals.length
+                      ? currentDebugFrame.locals.map((item) => (
+                          <div key={`${currentDebugFrame.id}-${item.name}`} className="debug-variable-row">
+                            <span className="debug-variable-name">{item.name}</span>
+                            <span className="debug-variable-type">{item.type}</span>
+                            <span className="debug-variable-value">{item.value}</span>
+                          </div>
+                        ))
+                      : <div className="debug-empty">{t('no_variables')}</div>
+                    }
+                  </div>
+                </div>
+              </div>
+              {debugSession.errorMessage && (
+                <div className="debug-error-banner">{debugSession.errorMessage}</div>
+              )}
+            </div>
+          )}
 
           <div ref={consolePanelRef} className="console-panel">
             <div className="panel-header">{t('console')}</div>

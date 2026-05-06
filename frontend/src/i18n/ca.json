@@ -17,7 +17,7 @@
   "topic": "Tema",
   "class": "Classe",
   "run": "Executa",
-  "stop": "Para",
+  "stop": "Atura",
   "evaluate": "Avalua",
   "help": "Ajuda",
   "save": "Desa",
@@ -112,4 +112,22 @@
   "unblock_chat": "Desbloqueja xat",
   "hide_from_students": "Amaga a l'alumnat",
   "show_to_students": "Mostra a l'alumnat"
+  ,"debugger": "Depurador"
+  ,"start_debug": "Depura"
+  ,"restart_debug": "Reinicia depuració"
+  ,"debug_ready": "Preparat"
+  ,"debug_error": "Error de depuració"
+  ,"continue": "Continua (BKP o fi)"
+  ,"step": "Avança"
+  ,"step_into": "Avança (entra)"
+  ,"step_over": "Avança (salta)"
+  ,"step_out": "Avança (surt)"
+  ,"breakpoints": "Breakpoints"
+  ,"call_stack": "Call Stack"
+  ,"variables": "Variables"
+  ,"paused": "En pausa"
+  ,"finished": "Finalitzat"
+  ,"hide": "Amaga"
+  ,"no_stack_frames": "Encara no hi ha cap frame disponible. Inicia la depuració per capturar la pila." 
+  ,"no_variables": "No hi ha variables visibles en aquest frame." 
 }
