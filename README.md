@@ -8,7 +8,18 @@ Plataforma web per aprendre Python. Els alumnes resolen exercicis que s'autocorr
 - **Node.js 18+**
 
 ## Backend (FastAPI)
-
+### Prod cutre
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python3 -m pip install gunicorn uvicorn
+#python3 -m gunicorn -k uvicorn.workers.UvicornWorker app.main:app -b 0.0.0.0:8000 -w 4
+nohup python3 -m gunicorn -k uvicorn.workers.UvicornWorker app.main:app -b 0.0.0.0:8000 -w 2 > gunicorn.log 2>&1 &
+echo $! > gunicorn.pid
+```
+### Dev
 ```bash
 cd backend
 
@@ -37,7 +48,16 @@ L'aplicació crea la base de dades SQLite (`pylamos.db`) automàticament al prim
 - **Contrasenya:** `admin`
 
 ## Frontend (React + Vite)
+### Prod cutre
+```
+cd frontend
+npm install
+npm run build
+nohup npm run preview -- --host 0.0.0.0 --port 5000 > frontend.log 2>&1 &
+echo $! > frontend.pid
+```
 
+### Dev
 ```bash
 cd frontend
 
