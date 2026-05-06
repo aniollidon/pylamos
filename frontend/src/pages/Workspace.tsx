@@ -44,6 +44,7 @@ export default function Workspace() {
   const [terminalInput, setTerminalInput] = useState('');
   const [collectedInputs, setCollectedInputs] = useState<string[]>([]);
   const [isWaitingForInput, setIsWaitingForInput] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConv, setActiveConv] = useState<Conversation | null>(null);
@@ -94,9 +95,10 @@ export default function Workspace() {
     setConsoleOutput([header, ...result.entries]);
     if (result.status === 'stdin_needed') {
       setIsWaitingForInput(true);
-      setTimeout(() => terminalInputRef.current?.focus(), 30);
+      setIsRunning(true);
     } else {
       setIsWaitingForInput(false);
+      setIsRunning(false);
     }
   }, []);
 
@@ -516,6 +518,12 @@ export default function Workspace() {
   }, [consoleOutput, isWaitingForInput]);
 
   useEffect(() => {
+    if (isWaitingForInput) {
+      terminalInputRef.current?.focus();
+    }
+  }, [isWaitingForInput]);
+
+  useEffect(() => {
     if (!chatOpen || isComposingNewConversation || !activeConv?.id) return;
 
     let cancelled = false;
@@ -566,7 +574,15 @@ export default function Workspace() {
     void loadConversation(latestOpen);
   }, [chatOpen, isComposingNewConversation, activeConv, conversations]);
 
+  const handleStop = useCallback(() => {
+    setIsRunning(false);
+    setIsWaitingForInput(false);
+    setTerminalInput('');
+    setConsoleOutput((prev) => [...prev, { type: 'info', text: '(execució aturada)\n' }]);
+  }, []);
+
   const handleRun = useCallback(async () => {
+    setIsRunning(true);
     const filename = exercise
       ? exercise.title.toLowerCase().replace(/\s+/g, '_').replace(/[^\w]/g, '') + '.py'
       : 'exercici.py';
@@ -583,6 +599,7 @@ export default function Workspace() {
     setIsWaitingForInput(false);
     setTerminalInput('');
     const result = runBrython(code, [], runSeedRef.current);
+    setIsRunning(false);
     applyResult({ text: `$ python ${filename}\n`, type: 'info' }, result);
     latestExecutionCodeRef.current = code;
     latestExecutionInfoRef.current = buildExecutionInfoFromResult(result);
@@ -713,7 +730,10 @@ export default function Workspace() {
               {saving ? '...' : t('save')}
             </button>
           )}
-          <button className="btn-primary" onClick={() => void handleRun()}>▶ {t('run')}</button>
+          {isRunning
+            ? <button className="btn-danger" onClick={handleStop}>⏹ {t('stop')}</button>
+            : <button className="btn-primary" onClick={() => void handleRun()}>▶ {t('run')}</button>
+          }
           {!isCompleted && (
             <button className="btn-success" onClick={() => void handleEvaluate()} disabled={chatLoading || isChatBlocked}>
               {t('evaluate')}
@@ -741,7 +761,10 @@ export default function Workspace() {
           <div className="panel-header editor-header">
             <span>Editor</span>
             <div className="editor-actions">
-              <button className="btn-primary" onClick={() => void handleRun()}>▶ {t('run')}</button>
+              {isRunning
+                ? <button className="btn-danger" onClick={handleStop}>⏹ {t('stop')}</button>
+                : <button className="btn-primary" onClick={() => void handleRun()}>▶ {t('run')}</button>
+              }
             </div>
           </div>
           <div className="editor-area">

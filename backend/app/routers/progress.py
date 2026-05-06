@@ -208,7 +208,12 @@ async def get_all_students_progress(
     materials = []
     for topic in topics:
         ex_result = await db.execute(
-            select(Exercise).where(Exercise.topic_id == topic.id).order_by(Exercise.order_index)
+            select(Exercise)
+            .where(
+                Exercise.topic_id == topic.id,
+                Exercise.is_hidden.is_(False),
+            )
+            .order_by(Exercise.order_index)
         )
         for ex in ex_result.scalars().all():
             exercises.append({"id": ex.id, "title": ex.title, "topic_name": topic.name, "order_index": ex.order_index})
@@ -287,7 +292,12 @@ async def get_topics_progress(
     topic_materials: dict[int, list] = {}
     for topic in topics:
         ex_result = await db.execute(
-            select(Exercise).where(Exercise.topic_id == topic.id).order_by(Exercise.order_index)
+            select(Exercise)
+            .where(
+                Exercise.topic_id == topic.id,
+                Exercise.is_hidden.is_(False),
+            )
+            .order_by(Exercise.order_index)
         )
         topic_exercises[topic.id] = ex_result.scalars().all()
         mat_result = await db.execute(
