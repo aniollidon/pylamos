@@ -82,6 +82,7 @@ export default function Workspace() {
   const [submission, setSubmission] = useState<Submission | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [nextExerciseId, setNextExerciseId] = useState<number | null>(null);
   const [code, setCode] = useState(DEFAULT_CODE);
   const [consoleOutput, setConsoleOutput] = useState<ConsoleEntry[]>([]);
   const [terminalInput, setTerminalInput] = useState('');
@@ -120,6 +121,7 @@ export default function Workspace() {
   const consoleOutputRef = useRef<HTMLDivElement>(null);
   const terminalInputRef = useRef<HTMLInputElement>(null);
   const editorAreaRef = useRef<HTMLDivElement>(null);
+  const workspaceLeftRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<MonacoEditorLike | null>(null);
   const monacoRef = useRef<MonacoNamespaceLike | null>(null);
   const debugHoverProviderRef = useRef<MonacoDisposableLike | null>(null);
@@ -737,6 +739,26 @@ export default function Workspace() {
     void loadData();
   }, [exerciseId, t, navigate]);
 
+  // Load topic exercises to find next exercise
+  useEffect(() => {
+    if (!exercise) return;
+
+    const loadTopicExercises = async () => {
+      try {
+        const res = await api.get<Exercise[]>(`/api/topics/${exercise.topic_id}/exercises`);
+
+        // Find next exercise in the topic (higher order_index)
+        const currentOrder = exercise.order_index;
+        const nextEx = res.data.find((ex) => ex.order_index > currentOrder);
+        setNextExerciseId(nextEx?.id ?? null);
+      } catch (err) {
+        console.error('Error loading topic exercises:', err);
+      }
+    };
+
+    void loadTopicExercises();
+  }, [exercise]);
+
   useEffect(() => {
     isDirty.current = code !== savedCodeRef.current;
   }, [code]);
@@ -1076,6 +1098,13 @@ export default function Workspace() {
   const isCompleted = submission?.status === 'correct' || submission?.status === 'teacher_correct';
   const isChatBlocked = submission?.chat_blocked === true;
 
+  // Auto-scroll to top when exercise is completed to show the "Next Exercise" button
+  useEffect(() => {
+    if (isCompleted && workspaceLeftRef.current) {
+      workspaceLeftRef.current.scrollTop = 0;
+    }
+  }, [isCompleted]);
+
   if (error) {
     return (
       <div style={{ padding: 40, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
@@ -1153,11 +1182,20 @@ export default function Workspace() {
       </div>
 
       <div className="workspace-main">
-        <div className="workspace-left">
+        <div className="workspace-left" ref={workspaceLeftRef}>
           {isCompleted && (
             <div className="solved-banner" role="status">
               <span className="solved-banner-icon">✓</span>
               <span>{t('exercise_solved')}</span>
+              {nextExerciseId && (
+                <button
+                  className="btn-primary btn-next-exercise"
+                  onClick={() => navigate(`/exercise/${nextExerciseId}`)}
+                  style={{ marginLeft: 'auto' }}
+                >
+                  {t('next_exercise')} →
+                </button>
+              )}
             </div>
           )}
           <div className="panel-header">{t('description')}</div>

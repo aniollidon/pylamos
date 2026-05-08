@@ -29,6 +29,27 @@
   flex-shrink: 0;
 }
 
+.solved-banner button {
+  background-color: rgba(255, 255, 255, 0.2) !important;
+  color: #e6fff0 !important;
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  padding: 6px 14px !important;
+  font-size: 13px !important;
+  border-radius: 4px !important;
+  cursor: pointer !important;
+  transition: background-color 0.15s, opacity 0.15s !important;
+  white-space: nowrap !important;
+}
+
+.solved-banner button:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.3) !important;
+}
+
+.solved-banner button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .workspace {
   display: flex;
   flex-direction: column;
