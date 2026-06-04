@@ -127,6 +127,7 @@ export default function Workspace() {
   const editorRef = useRef<MonacoEditorLike | null>(null);
   const monacoRef = useRef<MonacoNamespaceLike | null>(null);
   const debugHoverProviderRef = useRef<MonacoDisposableLike | null>(null);
+  const monacoPasteListenerRef = useRef<MonacoDisposableLike | null>(null);
   const breakpointDecorationIdsRef = useRef<string[]>([]);
   const currentLineDecorationIdsRef = useRef<string[]>([]);
   const debugStatusRef = useRef<DebugSessionState['status']>('idle');
@@ -378,6 +379,43 @@ export default function Workspace() {
         };
       },
     });
+    monacoPasteListenerRef.current?.dispose();
+    monacoPasteListenerRef.current = editorInstance.onDidPaste((pasteEvent) => {
+      const model = editorInstance.getModel();
+      if (!model) return;
+
+      const pastedText = model.getValueInRange(pasteEvent.range);
+      if (INTERNAL_CLIPBOARD_REGEX.test(pastedText)) {
+        console.log('[clipboard][monaco] paste accepted', {
+          hasMarker: true,
+          length: pastedText.length,
+          range: pasteEvent.range,
+        });
+        const sanitizedText = pastedText.replace(INTERNAL_CLIPBOARD_REGEX, '');
+        if (sanitizedText !== pastedText) {
+          editorInstance.executeEdits('pylamos-internal-clipboard-sanitize', [{
+            range: pasteEvent.range,
+            text: sanitizedText,
+            forceMoveMarkers: true,
+          }]);
+          editorInstance.pushUndoStop();
+        }
+        return;
+      }
+
+      console.log('[clipboard][monaco] paste blocked', {
+        hasMarker: false,
+        length: pastedText.length,
+        range: pasteEvent.range,
+      });
+      editorInstance.executeEdits('pylamos-internal-clipboard-block', [{
+        range: pasteEvent.range,
+        text: '',
+        forceMoveMarkers: true,
+      }]);
+      editorInstance.pushUndoStop();
+      window.alert(FRAUD_PASTE_BLOCKED_MESSAGE);
+    });
     editorInstance.onMouseDown((event: MonacoMouseEventLike) => {
       const mouseTargetType = monacoInstance.editor.MouseTargetType;
       const lineNumber = event.target.position?.lineNumber;
@@ -419,22 +457,6 @@ export default function Workspace() {
     }
 
     return false;
-  }, []);
-
-  const insertTextInMonaco = useCallback((text: string) => {
-    const editorInstance = editorRef.current;
-    if (!editorInstance) return false;
-
-    const selection = editorInstance.getSelection();
-    if (!selection) return false;
-
-    editorInstance.executeEdits('pylamos-internal-clipboard', [{
-      range: selection,
-      text,
-      forceMoveMarkers: true,
-    }]);
-    editorInstance.pushUndoStop();
-    return true;
   }, []);
 
   const executeDebugHistory = useCallback(async (nextHistory: DebugCommand[], nextSeed: number, nextInputs: string[]) => {
@@ -793,8 +815,9 @@ export default function Workspace() {
       if (typeof pastedText !== 'string') return;
 
       const monacoPaste = isMonacoTarget(event.target);
-      const editableTarget = monacoPaste
-        || event.target instanceof HTMLTextAreaElement
+      if (monacoPaste) return;
+
+      const editableTarget = event.target instanceof HTMLTextAreaElement
         || event.target instanceof HTMLInputElement
         || (event.target instanceof HTMLElement && event.target.isContentEditable);
 
@@ -802,19 +825,11 @@ export default function Workspace() {
 
       if (!INTERNAL_CLIPBOARD_REGEX.test(pastedText)) {
         event.preventDefault();
-        if (monacoPaste) {
-          window.alert(FRAUD_PASTE_BLOCKED_MESSAGE);
-        }
         return;
       }
 
       const sanitizedText = pastedText.replace(INTERNAL_CLIPBOARD_REGEX, '');
       event.preventDefault();
-
-      if (monacoPaste) {
-        insertTextInMonaco(sanitizedText);
-        return;
-      }
 
       insertTextAtCursor(event.target, sanitizedText);
     };
@@ -824,7 +839,7 @@ export default function Workspace() {
     return () => {
       document.removeEventListener('paste', handlePaste, true);
     };
-  }, [insertTextAtCursor, insertTextInMonaco, isMonacoTarget]);
+  }, [insertTextAtCursor, isMonacoTarget]);
 
   // Load topic exercises to find next exercise
   useEffect(() => {
@@ -930,6 +945,8 @@ export default function Workspace() {
     return () => {
       debugHoverProviderRef.current?.dispose();
       debugHoverProviderRef.current = null;
+      monacoPasteListenerRef.current?.dispose();
+      monacoPasteListenerRef.current = null;
     };
   }, []);
 
