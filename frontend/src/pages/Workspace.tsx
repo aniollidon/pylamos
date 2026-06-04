@@ -19,6 +19,9 @@ import type { Exercise, Submission, Conversation, ChatMessage, CodeExecutionInfo
 import './Workspace.css';
 
 const DEFAULT_CODE = '# Escriu el teu codi aquí\n';
+const INTERNAL_CLIPBOARD_MARK = '   ';
+const INTERNAL_CLIPBOARD_REGEX = /   $/;
+const FRAUD_PASTE_BLOCKED_MESSAGE = "s'ha bloquejat un possible intent de frau.";
 
 type ExecutionMode = 'run' | 'debug' | null;
 
@@ -389,6 +392,68 @@ export default function Workspace() {
     });
   }, [toggleBreakpoint]);
 
+  const getSelectedTextFromTarget = useCallback((target: EventTarget | null) => {
+    if (target instanceof HTMLTextAreaElement) {
+      const start = target.selectionStart ?? 0;
+      const end = target.selectionEnd ?? start;
+      return target.value.slice(start, end);
+    }
+
+    if (target instanceof HTMLInputElement) {
+      const start = target.selectionStart ?? 0;
+      const end = target.selectionEnd ?? start;
+      return target.value.slice(start, end);
+    }
+
+    return '';
+  }, []);
+
+  const isMonacoTarget = useCallback((target: EventTarget | null) => {
+    return target instanceof Element && Boolean(target.closest('.monaco-editor'));
+  }, []);
+
+  const insertTextAtCursor = useCallback((target: EventTarget | null, text: string) => {
+    if (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) {
+      const start = target.selectionStart ?? target.value.length;
+      const end = target.selectionEnd ?? start;
+      target.setRangeText(text, start, end, 'end');
+      target.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    }
+
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement && activeElement.isContentEditable) {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) return false;
+      const range = selection.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(document.createTextNode(text));
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      activeElement.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    }
+
+    return false;
+  }, []);
+
+  const insertTextInMonaco = useCallback((text: string) => {
+    const editorInstance = editorRef.current;
+    if (!editorInstance) return false;
+
+    const selection = editorInstance.getSelection();
+    if (!selection) return false;
+
+    editorInstance.executeEdits('pylamos-internal-clipboard', [{
+      range: selection,
+      text,
+      forceMoveMarkers: true,
+    }]);
+    editorInstance.pushUndoStop();
+    return true;
+  }, []);
+
   const executeDebugHistory = useCallback(async (nextHistory: DebugCommand[], nextSeed: number, nextInputs: string[]) => {
     const filename = exercise
       ? exercise.title.toLowerCase().replace(/\s+/g, '_').replace(/[^\w]/g, '') + '.py'
@@ -738,6 +803,45 @@ export default function Workspace() {
 
     void loadData();
   }, [exerciseId, t, navigate]);
+
+  useEffect(() => {
+    const handlePaste = (event: ClipboardEvent) => {
+      const pastedText = event.clipboardData?.getData('text/plain');
+      if (typeof pastedText !== 'string') return;
+
+      const monacoPaste = isMonacoTarget(event.target);
+      const editableTarget = monacoPaste
+        || event.target instanceof HTMLTextAreaElement
+        || event.target instanceof HTMLInputElement
+        || (event.target instanceof HTMLElement && event.target.isContentEditable);
+
+      if (!editableTarget) return;
+
+      if (!INTERNAL_CLIPBOARD_REGEX.test(pastedText)) {
+        event.preventDefault();
+        if (monacoPaste) {
+          window.alert(FRAUD_PASTE_BLOCKED_MESSAGE);
+        }
+        return;
+      }
+
+      const sanitizedText = pastedText.replace(INTERNAL_CLIPBOARD_REGEX, '');
+      event.preventDefault();
+
+      if (monacoPaste) {
+        insertTextInMonaco(sanitizedText);
+        return;
+      }
+
+      insertTextAtCursor(event.target, sanitizedText);
+    };
+
+    document.addEventListener('paste', handlePaste, true);
+
+    return () => {
+      document.removeEventListener('paste', handlePaste, true);
+    };
+  }, [insertTextAtCursor, insertTextInMonaco, isMonacoTarget]);
 
   // Load topic exercises to find next exercise
   useEffect(() => {
