@@ -19,7 +19,6 @@ import type { Exercise, Submission, Conversation, ChatMessage, CodeExecutionInfo
 import './Workspace.css';
 
 const DEFAULT_CODE = '# Escriu el teu codi aquí\n';
-const INTERNAL_CLIPBOARD_MARK = '   ';
 const INTERNAL_CLIPBOARD_REGEX = /   $/;
 const FRAUD_PASTE_BLOCKED_MESSAGE = "s'ha bloquejat un possible intent de frau.";
 
@@ -391,22 +390,6 @@ export default function Workspace() {
       }
     });
   }, [toggleBreakpoint]);
-
-  const getSelectedTextFromTarget = useCallback((target: EventTarget | null) => {
-    if (target instanceof HTMLTextAreaElement) {
-      const start = target.selectionStart ?? 0;
-      const end = target.selectionEnd ?? start;
-      return target.value.slice(start, end);
-    }
-
-    if (target instanceof HTMLInputElement) {
-      const start = target.selectionStart ?? 0;
-      const end = target.selectionEnd ?? start;
-      return target.value.slice(start, end);
-    }
-
-    return '';
-  }, []);
 
   const isMonacoTarget = useCallback((target: EventTarget | null) => {
     return target instanceof Element && Boolean(target.closest('.monaco-editor'));
