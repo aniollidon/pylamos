@@ -433,6 +433,17 @@ export default function Workspace() {
     return target instanceof Element && Boolean(target.closest('.monaco-editor'));
   }, []);
 
+  const getSelectedTextFromMonaco = useCallback(() => {
+    const editorInstance = editorRef.current;
+    if (!editorInstance) return '';
+
+    const model = editorInstance.getModel();
+    const selection = editorInstance.getSelection();
+    if (!model || !selection || selection.isEmpty()) return '';
+
+    return model.getValueInRange(selection);
+  }, []);
+
   const insertTextAtCursor = useCallback((target: EventTarget | null, text: string) => {
     if (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) {
       const start = target.selectionStart ?? target.value.length;
@@ -810,6 +821,18 @@ export default function Workspace() {
   }, [exerciseId, t, navigate]);
 
   useEffect(() => {
+    const handleCopy = (event: ClipboardEvent) => {
+      if (!event.clipboardData) return;
+      if (!isMonacoTarget(event.target)) return;
+
+      const copiedText = getSelectedTextFromMonaco();
+      if (!copiedText) return;
+
+      event.preventDefault();
+      event.clipboardData.setData('text/plain', `${copiedText}   `);
+      console.log('[clipboard][monaco] copy tagged', { length: copiedText.length });
+    };
+
     const handlePaste = (event: ClipboardEvent) => {
       const pastedText = event.clipboardData?.getData('text/plain');
       if (typeof pastedText !== 'string') return;
@@ -834,12 +857,14 @@ export default function Workspace() {
       insertTextAtCursor(event.target, sanitizedText);
     };
 
+    document.addEventListener('copy', handleCopy, true);
     document.addEventListener('paste', handlePaste, true);
 
     return () => {
+      document.removeEventListener('copy', handleCopy, true);
       document.removeEventListener('paste', handlePaste, true);
     };
-  }, [insertTextAtCursor, isMonacoTarget]);
+  }, [getSelectedTextFromMonaco, insertTextAtCursor, isMonacoTarget]);
 
   // Load topic exercises to find next exercise
   useEffect(() => {
