@@ -50,6 +50,10 @@ export default function App() {
     const handleCopy = (event: ClipboardEvent) => {
       if (!event.clipboardData) return;
 
+      if (event.target instanceof HTMLElement && (event.target.classList.contains('inputarea') || event.target.closest('.monaco-editor'))) {
+        return;
+      }
+
       const selectionText = window.getSelection()?.toString() ?? '';
       const targetText = getSelectedTextFromTarget(event.target);
       const copiedText = selectionText || targetText;

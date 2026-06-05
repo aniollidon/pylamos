@@ -416,6 +416,7 @@ export default function Workspace() {
       editorInstance.pushUndoStop();
       window.alert(FRAUD_PASTE_BLOCKED_MESSAGE);
     });
+
     editorInstance.onMouseDown((event: MonacoMouseEventLike) => {
       const mouseTargetType = monacoInstance.editor.MouseTargetType;
       const lineNumber = event.target.position?.lineNumber;
@@ -829,6 +830,7 @@ export default function Workspace() {
       if (!copiedText) return;
 
       event.preventDefault();
+      event.stopPropagation();
       event.clipboardData.setData('text/plain', `${copiedText}   `);
       console.log('[clipboard][monaco] copy tagged', { length: copiedText.length });
     };
