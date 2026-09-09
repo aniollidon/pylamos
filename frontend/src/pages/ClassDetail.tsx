@@ -220,6 +220,8 @@ export default function ClassDetail() {
   const [selectedUserId, setSelectedUserId] = useState<number>(0);
   const [showAddTopic, setShowAddTopic] = useState(false);
   const [topicName, setTopicName] = useState('');
+  const [showEditClass, setShowEditClass] = useState(false);
+  const [editClassName, setEditClassName] = useState('');
   const [showEditTopic, setShowEditTopic] = useState<number | null>(null);
   const [editTopicName, setEditTopicName] = useState('');
   const [showAddExercise, setShowAddExercise] = useState<number | null>(null);
@@ -358,6 +360,14 @@ export default function ClassDetail() {
 
   const handleRemoveMember = async (userId: number) => {
     await api.delete(`/api/classes/${classId}/members/${userId}`);
+    loadAll();
+  };
+
+  // ── Class ──
+  const handleEditClass = async () => {
+    if (!editClassName.trim()) return;
+    await api.put(`/api/classes/${classId}`, { name: editClassName.trim() });
+    setShowEditClass(false);
     loadAll();
   };
 
@@ -525,6 +535,7 @@ export default function ClassDetail() {
       <div className="class-detail-header">
         <Link to="/classes" style={{ color: 'var(--text-secondary)' }}>← {t('classes')}</Link>
         <h2>{cls.name}</h2>
+        <button className="btn-secondary" onClick={() => { setEditClassName(cls.name); setShowEditClass(true); }}>{t('edit')}</button>
         <Link to={`/classes/${classId}/progress`}>
           <button className="btn-secondary">{t('class_progress')}</button>
         </Link>
@@ -602,6 +613,24 @@ export default function ClassDetail() {
             <div className="modal-actions">
               <button className="btn-secondary" onClick={() => setShowAddMember(false)}>{t('cancel')}</button>
               <button className="btn-primary" onClick={handleAddMember} disabled={!selectedUserId}>{t('add_member')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit class modal */}
+      {showEditClass && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <h3>{t('edit')} {t('class')}</h3>
+            <div className="form-group">
+              <label>{t('name')}</label>
+              <input value={editClassName} onChange={(e) => setEditClassName(e.target.value)} autoFocus
+                onKeyDown={(e) => e.key === 'Enter' && handleEditClass()} />
+            </div>
+            <div className="modal-actions">
+              <button className="btn-secondary" onClick={() => setShowEditClass(false)}>{t('cancel')}</button>
+              <button className="btn-primary" onClick={handleEditClass} disabled={!editClassName.trim()}>{t('save')}</button>
             </div>
           </div>
         </div>
